@@ -1,5 +1,5 @@
 <p align="center">
-  [<img src="./[assets/ytview-icon.png](https://github.com/DouglasPrado/youtube-pip-view/blob/main/apps/chrome-extension/public/icons/icon128.png)" width="180" alt="YTView logo" />](https://github.com/DouglasPrado/youtube-pip-view/blob/main/apps/chrome-extension/public/icons/icon128.png)
+  <img src="./apps/chrome-extension/public/icons/icon128.png width="180" alt="YTView logo" />
 </p>
 
 <h1 align="center">YTView</h1>
@@ -696,3 +696,4 @@ YouTube and the YouTube logo are trademarks of Google LLC.
 # License
 
 See the repository license for licensing information.
+
