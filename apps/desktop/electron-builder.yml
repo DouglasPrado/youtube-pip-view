@@ -2,7 +2,10 @@ appId: com.ytview.app
 productName: YTView
 directories:
   buildResources: build
-  output: dist
+  # Não pode ser "dist": é lá que o Vite põe o renderer, que entra no pacote.
+  # Com os dois no mesmo lugar, cada build empacotava o app anterior dentro
+  # do novo (o asar chegou a 258 MB).
+  output: release
 files:
   - dist/**/*
   - dist-electron/**/*

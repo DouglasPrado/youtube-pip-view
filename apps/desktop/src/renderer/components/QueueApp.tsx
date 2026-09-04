@@ -1,38 +1,81 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, Trash2, X } from "lucide-react";
-import { useVideoId } from "../hooks/useVideoId";
+import { CornerDownRight, GripVertical, Play, RotateCcw, Trash2, X } from "lucide-react";
+import {
+  mediaKey,
+  mediaPageUrl,
+  mediaThumbnail,
+  parseMediaKey,
+  parseMediaUrl,
+  providerLabel,
+} from "@ytview/youtube-utils";
 import type { QueueItem, QueueState } from "../../types";
+import { strings } from "../strings";
 import "../styles/queue.css";
+
+/** Miniatura quando o serviço oferece uma; senão, a inicial do serviço. */
+function Thumb({ videoId }: { videoId: string }) {
+  const ref = parseMediaKey(videoId);
+  const src = mediaThumbnail(ref);
+  const [broken, setBroken] = useState(false);
+
+  if (!src || broken) {
+    return (
+      <span className={`queue-item-thumb queue-item-thumb-${ref.provider}`} aria-hidden="true">
+        {providerLabel(ref.provider).slice(0, 1)}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      className="queue-item-thumb"
+      src={src}
+      alt=""
+      onError={() => setBroken(true)}
+    />
+  );
+}
 
 export function QueueApp() {
   const [queue, setQueue] = useState<QueueState>({ items: [], currentIndex: -1 });
   const [inputValue, setInputValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [clearedCount, setClearedCount] = useState<number | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeItemRef = useRef<HTMLLIElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const extractVideoId = useVideoId();
 
-  // Load initial queue state
   useEffect(() => {
-    if (!window.electronAPI?.getQueue) return;
-    window.electronAPI.getQueue().then((state) => {
+    window.electronAPI?.getQueue?.().then((state) => {
       if (state) setQueue(state);
     });
   }, []);
 
-  // Listen for queue updates from main process
   useEffect(() => {
-    if (!window.electronAPI?.onQueueUpdated) return;
-    const cleanup = window.electronAPI.onQueueUpdated((state: QueueState) => {
+    return window.electronAPI?.onQueueUpdated?.((state: QueueState) => {
       setQueue(state);
     });
-    return cleanup;
+  }, []);
+
+  // Quando a fila avança sozinha, o item que passou a tocar pode estar fora
+  // da tela numa lista longa.
+  useEffect(() => {
+    activeItemRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [queue.currentIndex]);
+
+  useEffect(() => {
+    return () => {
+      if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    };
   }, []);
 
   const handleAddVideos = async () => {
     const text = inputValue.trim();
     if (!text) {
-      setError("Cole URLs do YouTube para adicionar à fila");
+      setError(strings.queue.needLinks);
       return;
     }
 
@@ -41,16 +84,16 @@ export function QueueApp() {
     const invalidLines: string[] = [];
 
     for (const line of lines) {
-      const videoId = extractVideoId(line);
-      if (videoId) {
-        parsedItems.push({ videoId, url: line });
+      const ref = parseMediaUrl(line);
+      if (ref) {
+        parsedItems.push({ videoId: mediaKey(ref), url: mediaPageUrl(ref) });
       } else {
         invalidLines.push(line);
       }
     }
 
     if (parsedItems.length === 0) {
-      setError("Nenhuma URL válida do YouTube encontrada");
+      setError(strings.queue.noValidLinks);
       return;
     }
 
@@ -75,26 +118,45 @@ export function QueueApp() {
     }
 
     if (invalidLines.length > 0) {
-      setError(`${parsedItems.length} adicionado(s). ${invalidLines.length} URL(s) inválida(s) ignorada(s).`);
+      setError(strings.queue.partial(parsedItems.length, invalidLines.length));
     }
   };
 
   const handleRemove = (id: string) => {
-    if (window.electronAPI?.removeFromQueue) {
-      window.electronAPI.removeFromQueue(id);
-    }
+    window.electronAPI?.removeFromQueue?.(id);
   };
 
-  const handleClear = () => {
-    if (window.electronAPI?.clearQueue) {
-      window.electronAPI.clearQueue();
-    }
+  // Limpar a fila é destrutivo e irreversível. Em vez de um diálogo de
+  // confirmação (que atrapalha quem quis mesmo limpar), a fila fica
+  // recuperável por alguns segundos.
+  const handleClear = async () => {
+    if (!window.electronAPI?.clearQueue) return;
+
+    const removed = queue.items.length;
+    const canUndo = await window.electronAPI.clearQueue();
+    if (!canUndo) return;
+
+    setClearedCount(removed);
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    undoTimeoutRef.current = setTimeout(() => setClearedCount(null), 10000);
+  };
+
+  const handleUndoClear = async () => {
+    if (!window.electronAPI?.undoClearQueue) return;
+
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    setClearedCount(null);
+
+    const restored = await window.electronAPI.undoClearQueue();
+    if (restored) setQueue(restored);
   };
 
   const handlePlay = (index: number) => {
-    if (window.electronAPI?.playFromQueue) {
-      window.electronAPI.playFromQueue(index);
-    }
+    window.electronAPI?.playFromQueue?.(index);
+  };
+
+  const handlePlayNext = (id: string) => {
+    window.electronAPI?.playNextInQueue?.(id);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -103,89 +165,169 @@ export function QueueApp() {
     }
   };
 
+  // Reordenar arrastando: o que qualquer pessoa tenta primeiro numa fila.
+  const handleDrop = (targetIndex: number) => {
+    if (dragIndex !== null && dragIndex !== targetIndex) {
+      window.electronAPI?.reorderQueue?.(dragIndex, targetIndex);
+    }
+    setDragIndex(null);
+    setDropIndex(null);
+  };
+
+  const remaining =
+    queue.currentIndex >= 0
+      ? queue.items.length - queue.currentIndex - 1
+      : queue.items.length;
+
   return (
     <div className="queue-app">
       <div className="queue-header">
-        <h1>Playlist</h1>
-        <span className="queue-count">{queue.items.length} vídeo(s)</span>
+        <h1>{strings.queue.title}</h1>
+        <span className="queue-count">
+          {queue.items.length === 0
+            ? strings.queue.empty
+            : queue.currentIndex >= 0
+            ? strings.queue.countOf(
+                queue.currentIndex + 1,
+                queue.items.length,
+                remaining
+              )
+            : strings.queue.countPlain(queue.items.length)}
+        </span>
       </div>
 
       <div className="queue-input-section">
         <textarea
           ref={textareaRef}
           className="queue-textarea"
-          placeholder={"Cole URLs do YouTube aqui (uma por linha)...\nEx: https://youtube.com/watch?v=..."}
+          placeholder={strings.queue.placeholder}
           value={inputValue}
           onChange={(e) => {
             setInputValue(e.target.value);
             setError(null);
           }}
           onKeyDown={handleKeyDown}
-          rows={4}
+          rows={3}
+          aria-label={strings.queue.inputAria}
         />
         {error && <span className="queue-error">{error}</span>}
-        <button className="queue-add-button" onClick={handleAddVideos} disabled={isAdding}>
-          {isAdding ? "Adicionando..." : "Adicionar à fila"}
+        <button
+          type="button"
+          className="queue-add-button"
+          onClick={handleAddVideos}
+          disabled={isAdding}
+        >
+          {isAdding ? strings.queue.adding : strings.queue.add}
         </button>
       </div>
 
-      <div className="queue-list">
-        {queue.items.length === 0 ? (
-          <div className="queue-empty">
-            <p>Nenhum vídeo na fila</p>
-            <p className="queue-empty-hint">Cole URLs acima para começar</p>
-          </div>
-        ) : (
-          queue.items.map((item, index) => (
-            <div
-              key={item.id}
-              className={`queue-item ${index === queue.currentIndex ? "active" : ""}`}
-            >
-              <div className="queue-item-index">{index + 1}</div>
-              <img
-                className="queue-item-thumb"
-                src={`https://img.youtube.com/vi/${item.videoId}/default.jpg`}
-                alt=""
-              />
-              <div className="queue-item-info">
-                <span className="queue-item-id" title={item.title || item.videoId}>
-                  {item.title || item.videoId}
+      {clearedCount !== null && (
+        <div className="queue-undo-bar" role="status">
+          <span>
+            {strings.queue.cleared(clearedCount)}
+          </span>
+          <button type="button" className="queue-undo-button" onClick={handleUndoClear}>
+            <RotateCcw size={13} aria-hidden="true" />
+            {strings.queue.undo}
+          </button>
+        </div>
+      )}
+
+      {queue.items.length === 0 ? (
+        <div className="queue-empty">
+          <p>{strings.queue.emptyTitle}</p>
+          <p className="queue-empty-hint">{strings.queue.emptyHint}</p>
+        </div>
+      ) : (
+        <ul className="queue-list">
+          {queue.items.map((item, index) => {
+            const isActive = index === queue.currentIndex;
+            return (
+              <li
+                key={item.id}
+                ref={isActive ? activeItemRef : undefined}
+                className={`queue-item ${isActive ? "active" : ""} ${
+                  dropIndex === index ? "drop-target" : ""
+                } ${dragIndex === index ? "dragging" : ""}`}
+                draggable
+                onDragStart={() => setDragIndex(index)}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDropIndex(index);
+                }}
+                onDragLeave={() => setDropIndex((current) => (current === index ? null : current))}
+                onDrop={() => handleDrop(index)}
+                onDragEnd={() => {
+                  setDragIndex(null);
+                  setDropIndex(null);
+                }}
+                onDoubleClick={() => handlePlay(index)}
+              >
+                <span className="queue-item-grip" aria-hidden="true">
+                  <GripVertical size={14} />
                 </span>
-                <span className="queue-item-url" title={item.url}>
-                  {item.url.length > 45 ? item.url.slice(0, 45) + "..." : item.url}
-                </span>
-              </div>
-              <div className="queue-item-actions">
-                <button
-                  className="queue-item-play"
-                  onClick={() => handlePlay(index)}
-                  title="Reproduzir"
-                >
-                  <Play size={14} />
-                </button>
-                <button
-                  className="queue-item-remove"
-                  onClick={() => handleRemove(item.id)}
-                  title="Remover"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+                <span className="queue-item-index">{index + 1}</span>
+                <Thumb videoId={item.videoId} />
+                <div className="queue-item-info">
+                  <span className="queue-item-title" title={item.title || item.videoId}>
+                    {item.title || item.videoId}
+                  </span>
+                  <span className="queue-item-url" title={item.url}>
+                    {isActive
+                      ? strings.queue.nowPlaying
+                      : providerLabel(parseMediaKey(item.videoId).provider)}
+                  </span>
+                </div>
+                <div className="queue-item-actions">
+                  <button
+                    type="button"
+                    className="queue-item-button"
+                    onClick={() => handlePlay(index)}
+                    title={strings.queue.playNow}
+                    aria-label={`Tocar ${item.title || item.videoId}`}
+                  >
+                    <Play size={13} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="queue-item-button"
+                    onClick={() => handlePlayNext(item.id)}
+                    title={strings.queue.playNext}
+                    aria-label={`Tocar ${item.title || item.videoId} em seguida`}
+                    disabled={isActive}
+                  >
+                    <CornerDownRight size={13} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="queue-item-button remove"
+                    onClick={() => handleRemove(item.id)}
+                    title={strings.queue.remove}
+                    aria-label={`Remover ${item.title || item.videoId}`}
+                  >
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {queue.items.length > 0 && (
         <div className="queue-footer">
-          <button className="queue-clear-button" onClick={handleClear}>
-            <Trash2 size={14} />
-            Limpar fila
+          <button type="button" className="queue-clear-button" onClick={handleClear}>
+            <Trash2 size={13} aria-hidden="true" />
+            {strings.queue.clear}
           </button>
-          {queue.currentIndex === -1 && queue.items.length > 0 && (
-            <button className="queue-play-all-button" onClick={() => handlePlay(0)}>
-              <Play size={14} />
-              Reproduzir tudo
+          {queue.currentIndex === -1 && (
+            <button
+              type="button"
+              className="queue-play-all-button"
+              onClick={() => handlePlay(0)}
+            >
+              <Play size={13} aria-hidden="true" />
+              {strings.queue.playAll}
             </button>
           )}
         </div>

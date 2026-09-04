@@ -1,3 +1,14 @@
+:root {
+  --surface: rgba(18, 18, 20, 0.92);
+  --surface-strong: rgba(24, 24, 28, 0.98);
+  --control-bg: rgba(0, 0, 0, 0.66);
+  --control-bg-hover: rgba(0, 0, 0, 0.88);
+  --accent: #ff2d38;
+  --text: #ffffff;
+  --text-dim: rgba(255, 255, 255, 0.62);
+  --focus: #6aa6ff;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -5,9 +16,8 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+    "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: transparent;
@@ -20,8 +30,6 @@ html,
 body {
   width: 100%;
   height: 100%;
-  margin: 0;
-  padding: 0;
   overflow: hidden;
   -webkit-app-region: drag;
 }
@@ -38,459 +46,486 @@ body {
   width: 100%;
   height: 100%;
   position: relative;
+  display: flex;
+  flex-direction: column;
   -webkit-app-region: drag;
 }
 
-.mouse-detector-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 50;
-  pointer-events: auto;
+/*
+ * A janela não tem moldura: o fundo é área de arrasto (-webkit-app-region:
+ * drag). Essa propriedade NÃO é herdada e a região é recortada por geometria,
+ * então todo elemento interativo precisa declarar no-drag por conta própria —
+ * inclusive os que flutuam fora da área de um ancestral já marcado, como o
+ * painel do menu, que abre acima da barra de controles.
+ *
+ * Sem isto, o clique esquerdo arrasta a janela em vez de acionar o controle,
+ * o hover não acende, e só o botão direito parece responder.
+ */
+button,
+input,
+select,
+textarea,
+a[href],
+[role="menu"],
+[role="menuitem"],
+[role="menuitemcheckbox"],
+[role="separator"] {
   -webkit-app-region: no-drag;
-  background: transparent;
 }
 
-/* Permitir que elementos interativos fiquem acima da overlay */
-.video-controls-wrapper,
-.video-controls-container {
-  position: relative;
-  z-index: 1000;
+/* Foco sempre visível: o app inteiro é operável por teclado. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
+
+/* ===== Player ===== */
 
 .youtube-player-container {
   width: 100%;
   height: 100%;
   position: relative;
-  cursor: move;
   overflow: hidden;
+  background: #000;
   -webkit-app-region: drag;
 }
 
-.youtube-player-container iframe {
+.youtube-iframe-mount,
+.youtube-iframe-mount .ytview-media-frame,
+.youtube-iframe-mount iframe {
   width: 100%;
   height: 100%;
   border: none;
-  pointer-events: none; /* Desabilitar interação com iframe - usar apenas botões flutuantes */
-  z-index: 2;
-  position: relative;
+  display: block;
+  /* O iframe não recebe cliques: quem trata é a camada abaixo, para que
+     clicar no vídeo pause em vez de abrir o menu do YouTube. */
+  pointer-events: none;
   -webkit-app-region: drag;
 }
 
-.youtube-player-container.loading {
-  opacity: 0.5;
-}
-
-.loading-state {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 14px;
-  z-index: 1;
-  -webkit-app-region: drag;
-}
-
-.youtube-player-container.error {
-  opacity: 0.7;
-}
-
-.queue-button {
-  position: absolute;
-  top: 10px;
-  right: 240px;
-  width: 36px;
-  height: 36px;
-  background: rgba(0, 0, 0, 0.7);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 10000;
-  color: #fff;
-  font-size: 20px;
-  transition: all 0.2s;
-  opacity: 0;
-  -webkit-app-region: no-drag;
+/* Com os controles do próprio serviço, os cliques têm de chegar ao player. */
+.youtube-player-container.native-controls .youtube-iframe-mount,
+.youtube-player-container.native-controls .youtube-iframe-mount iframe,
+.youtube-player-container.native-controls .ytview-media-frame {
   pointer-events: auto;
-}
-
-.queue-button svg {
-  width: 18px;
-  height: 18px;
-  stroke: currentColor;
-  color: #fff;
-}
-
-.change-video-button {
-  position: absolute;
-  top: 10px;
-  right: 194px;
-  width: 36px;
-  height: 36px;
-  background: rgba(0, 0, 0, 0.7);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 10000;
-  color: #fff;
-  font-size: 20px;
-  transition: all 0.2s;
-  opacity: 0;
   -webkit-app-region: no-drag;
-  pointer-events: auto;
 }
 
-.open-youtube-button {
+.mouse-detector-overlay.pass-through {
+  pointer-events: none;
+}
+
+/* Camada que captura o mouse em toda a janela (clique = pausar). */
+.mouse-detector-overlay {
   position: absolute;
-  top: 10px;
-  right: 148px;
-  width: 36px;
-  height: 36px;
-  background: rgba(0, 0, 0, 0.7);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  inset: 0;
+  z-index: 50;
+  background: transparent;
   cursor: pointer;
-  z-index: 10000;
-  color: #fff;
-  font-size: 20px;
-  transition: all 0.2s;
-  opacity: 0;
   -webkit-app-region: no-drag;
-  pointer-events: auto;
 }
 
-.open-youtube-button svg {
-  width: 18px;
-  height: 18px;
-  stroke: currentColor;
-  color: #fff;
-}
+/* ===== Título do vídeo ===== */
 
-.fullscreen-button {
+.video-title {
   position: absolute;
-  top: 10px;
-  right: 102px;
-  width: 36px;
-  height: 36px;
-  background: rgba(0, 0, 0, 0.7);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 10000;
-  color: #fff;
-  font-size: 20px;
-  transition: all 0.2s;
+  top: 0;
+  left: 0;
+  right: 132px;
+  z-index: 60;
+  padding: 12px 14px 24px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.75), transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   opacity: 0;
-  -webkit-app-region: no-drag;
-  pointer-events: auto;
+  transition: opacity 0.2s;
+  pointer-events: none;
 }
 
-.fullscreen-button svg {
-  width: 18px;
-  height: 18px;
-  stroke: currentColor;
-  color: #fff;
-}
-
-.minimize-button {
-  position: absolute;
-  top: 10px;
-  right: 56px;
-  width: 36px;
-  height: 36px;
-  background: rgba(0, 0, 0, 0.7);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 10000;
-  color: #fff;
-  font-size: 20px;
-  transition: all 0.2s;
-  opacity: 0;
-  -webkit-app-region: no-drag;
-  pointer-events: auto;
-}
-
-.minimize-button svg {
-  width: 18px;
-  height: 18px;
-  stroke: currentColor;
-  color: #fff;
-}
-
-.close-button {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 36px;
-  height: 36px;
-  background: rgba(0, 0, 0, 0.7);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 10000;
-  color: #fff;
-  font-size: 20px;
-  transition: all 0.2s;
-  opacity: 0;
-  -webkit-app-region: no-drag;
-  pointer-events: auto;
-}
-
-.close-button svg {
-  width: 18px;
-  height: 18px;
-  stroke: currentColor;
-  color: #fff;
-}
-
-.youtube-player-container:hover .queue-button,
-.youtube-player-container:hover .change-video-button,
-.youtube-player-container:hover .open-youtube-button,
-.youtube-player-container:hover .fullscreen-button,
-.youtube-player-container:hover .minimize-button,
-.youtube-player-container:hover .close-button,
-.youtube-player-container.show-controls .queue-button,
-.youtube-player-container.show-controls .change-video-button,
-.youtube-player-container.show-controls .open-youtube-button,
-.youtube-player-container.show-controls .fullscreen-button,
-.youtube-player-container.show-controls .minimize-button,
-.youtube-player-container.show-controls .close-button {
+.youtube-player-container.show-controls .video-title {
   opacity: 1;
 }
 
-.queue-button:hover,
-.change-video-button:hover,
-.open-youtube-button:hover,
-.fullscreen-button:hover,
-.minimize-button:hover,
-.close-button:hover {
-  background: rgba(0, 0, 0, 0.9);
-  transform: scale(1.1);
+/* ===== Botões de janela (topo direito) ===== */
+
+.window-buttons {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10000;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  -webkit-app-region: no-drag;
 }
 
+.youtube-player-container.show-controls .window-buttons,
+.window-buttons:focus-within {
+  opacity: 1;
+}
+
+.window-button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--control-bg);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+  -webkit-app-region: no-drag;
+}
+
+.window-button:hover {
+  background: var(--control-bg-hover);
+  transform: scale(1.08);
+}
+
+.window-button:active {
+  transform: scale(0.96);
+}
+
+/* ===== Estado vazio ===== */
+
 .empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  color: rgba(255, 255, 255, 0.6);
-  gap: 16px;
-  pointer-events: none;
-  user-select: none;
-  -webkit-app-region: drag;
+  gap: 10px;
+  border: none;
+  background: #000;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-app-region: no-drag;
 }
 
 .empty-state-icon {
-  font-size: 48px;
-  opacity: 0.5;
+  font-size: 40px;
+  opacity: 0.45;
 }
 
 .empty-state-text {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
+  color: var(--text);
 }
 
-.error-overlay {
+.empty-state-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ===== Estado de erro ===== */
+
+.player-error {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
+  z-index: 900;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.7);
-  z-index: 10;
-  cursor: pointer;
-  -webkit-app-region: drag;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.92);
+  -webkit-app-region: no-drag;
 }
 
-.error-message {
+.player-error-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   text-align: center;
-  color: #fff;
-  padding: 24px;
+  color: var(--text);
+  max-width: 340px;
 }
 
-.error-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
-  opacity: 0.8;
+.player-error-content svg {
+  color: var(--accent);
 }
 
-.error-hint {
-  font-size: 12px;
-  margin-top: 8px;
-  opacity: 0.7;
+.player-error-message {
+  font-size: 14px;
+  line-height: 1.4;
 }
+
+.player-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.player-error-button {
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.player-error-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.player-error-button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.player-error-button.primary:hover {
+  background: #d81b26;
+}
+
+/* ===== Campo de vídeo ===== */
 
 .video-input-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.88);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  animation: fadeIn 0.2s ease-in-out;
+  padding: 16px;
+  z-index: 1100;
+  animation: fadeIn 0.15s ease-out;
   -webkit-app-region: no-drag;
-}
-
-.video-input-overlay.hidden {
-  display: none;
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .video-input-container {
-  background: rgba(30, 30, 30, 0.95);
-  padding: 24px;
+  background: var(--surface-strong);
+  padding: 20px;
   border-radius: 12px;
-  min-width: 400px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  animation: slideUp 0.3s ease-out;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   -webkit-app-region: no-drag;
 }
 
-@keyframes slideUp {
-  from {
-    transform: translateY(20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
 .video-input-label {
-  color: #fff;
-  font-size: 14px;
+  color: var(--text);
+  font-size: 13px;
   font-weight: 500;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   display: block;
 }
 
 .video-input-field {
   width: 100%;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.1);
+  padding: 11px 14px;
+  background: rgba(255, 255, 255, 0.09);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
-  color: #fff;
+  color: var(--text);
   font-size: 14px;
+  font-family: inherit;
   outline: none;
-  transition: all 0.2s;
+  transition: border-color 0.15s, background 0.15s;
   -webkit-app-region: no-drag;
 }
 
 .video-input-field:focus {
-  border-color: #ff0000;
-  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .video-input-field::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .video-input-field.error {
-  border-color: #ff4444;
+  border-color: var(--accent);
+}
+
+.video-input-error {
+  color: #ff7b82;
+  font-size: 12px;
+  margin-top: 8px;
+  display: block;
+  line-height: 1.35;
+}
+
+.video-input-clipboard {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.video-input-clipboard:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
 }
 
 .video-input-actions {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   margin-top: 16px;
   justify-content: flex-end;
 }
 
 .video-input-button {
-  padding: 10px 20px;
+  padding: 9px 18px;
   border: none;
   border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
-  transition: all 0.2s;
-  outline: none;
+  transition: background 0.15s;
   -webkit-app-region: no-drag;
 }
 
 .video-input-button.primary {
-  background: #ff0000;
-  color: #fff;
+  background: var(--accent);
+  color: var(--text);
 }
 
 .video-input-button.primary:hover {
-  background: #cc0000;
+  background: #d81b26;
 }
 
 .video-input-button.secondary {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
 }
 
 .video-input-button.secondary:hover {
   background: rgba(255, 255, 255, 0.2);
 }
 
-.video-input-error {
-  color: #ff4444;
-  font-size: 12px;
-  margin-top: 8px;
-  display: block;
+/* ===== Onboarding ===== */
+
+.onboarding-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.94);
+  -webkit-app-region: no-drag;
 }
+
+.onboarding-card {
+  width: 100%;
+  max-width: 400px;
+  color: var(--text);
+}
+
+.onboarding-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.onboarding-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.onboarding-list li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.onboarding-list svg {
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+kbd {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  padding: 1px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+
+.onboarding-button {
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.onboarding-button:hover {
+  background: #d81b26;
+}
+
+/* ===== Carregando ===== */
 
 .loading-spinner {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #ff0000;
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  z-index: 999;
-  -webkit-app-region: drag;
+  z-index: 800;
+  pointer-events: none;
 }
 
 @keyframes spin {
-  to {
-    transform: translate(-50%, -50%) rotate(360deg);
-  }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
-.loading-spinner.hidden {
-  display: none;
-}
+/* ===== Barra de controles ===== */
 
 .video-controls-wrapper {
   position: absolute;
@@ -498,22 +533,22 @@ body {
   left: 0;
   right: 0;
   z-index: 1000;
+  /* Sem isto, a faixa inferior engole o clique mesmo com os controles
+     escondidos: o vídeo não pausa e os botões ficam inalcançáveis. */
   pointer-events: none;
   -webkit-app-region: no-drag;
 }
 
 .video-controls-container {
-  position: relative;
   pointer-events: auto;
-  padding: 10px 20px 15px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, transparent 100%);
-  transition: opacity 0.3s ease, transform 0.3s ease;
-  transform: translateY(0);
+  padding: 24px 12px 10px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 30%, transparent);
+  transition: opacity 0.25s ease, transform 0.25s ease;
 }
 
 .video-controls-container.hidden {
   opacity: 0;
-  transform: translateY(10px);
+  transform: translateY(8px);
   pointer-events: none;
 }
 
@@ -525,73 +560,89 @@ body {
 .video-progress-container {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
 }
 
 .playback-actions {
   display: flex;
   align-items: center;
+  gap: 4px;
+}
+
+.video-live {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  flex: 1;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  justify-content: center;
+}
+
+.video-native-hint {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
 }
 
 .video-time {
-  color: #fff;
+  color: var(--text);
   font-size: 11px;
   font-weight: 500;
-  min-width: 35px;
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
   text-align: center;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   white-space: nowrap;
 }
 
 .control-button-small {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   border: none;
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
+  background: var(--control-bg);
+  color: var(--text);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  transition: all 0.2s;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-  -webkit-app-region: no-drag;
+  transition: background 0.15s, transform 0.15s;
   flex-shrink: 0;
+  -webkit-app-region: no-drag;
 }
 
-.control-button-small:hover {
-  background: rgba(0, 0, 0, 0.9);
+.control-button-small:hover:not(:disabled) {
+  background: var(--control-bg-hover);
   transform: scale(1.1);
 }
 
-.control-button-small:active {
-  transform: scale(0.95);
+.control-button-small:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
-.queue-nav-button svg {
-  width: 14px;
-  height: 14px;
-  stroke: currentColor;
-  color: #fff;
+.control-button-small:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
-.queue-nav-button:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  transform: none;
+.play-pause-button {
+  width: 30px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.16);
 }
 
-.queue-nav-button:disabled:hover {
-  background: rgba(0, 0, 0, 0.7);
-  transform: none;
-}
+/* Sliders */
 
-.video-progress-slider {
-  flex: 1;
+.video-progress-slider,
+.volume-slider {
   height: 4px;
   background: rgba(255, 255, 255, 0.3);
   border-radius: 2px;
@@ -602,48 +653,55 @@ body {
   -webkit-app-region: no-drag;
 }
 
+.video-progress-slider {
+  flex: 1;
+  min-width: 40px;
+}
+
+.video-progress-slider:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.volume-slider {
+  width: 56px;
+}
+
 .video-progress-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
-  background: #ff0000;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
   border-radius: 50%;
   cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  margin-top: -5px; /* Centralizar verticalmente: (4px altura da barra - 14px altura do thumb) / 2 = -5px */
+  margin-top: -4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s;
+}
+
+.video-progress-slider:disabled::-webkit-slider-thumb {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .video-progress-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-  background: #ff3333;
+  transform: scale(1.25);
 }
 
-.video-progress-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  background: #ff0000;
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  background: #fff;
   border-radius: 50%;
   cursor: pointer;
-  border: none;
-  transition: all 0.2s;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  /* Firefox centraliza automaticamente, mas podemos garantir com position */
+  margin-top: -3.5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
-.video-progress-slider::-moz-range-thumb:hover {
-  transform: scale(1.2);
-  background: #ff3333;
-}
-
-.video-progress-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
-}
-
-.video-progress-slider::-moz-range-track {
+.video-progress-slider::-webkit-slider-runnable-track,
+.volume-slider::-webkit-slider-runnable-track {
   height: 4px;
   background: rgba(255, 255, 255, 0.3);
   border-radius: 2px;
@@ -653,106 +711,150 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-left: 4px;
 }
 
-.volume-button {
-  width: 28px;
-  height: 28px;
+/* Menu de ações */
+
+.controls-menu {
+  -webkit-app-region: no-drag;
+  position: relative;
   flex-shrink: 0;
 }
 
-.volume-button svg {
-  width: 14px;
-  height: 14px;
-  stroke: currentColor;
-  color: #fff;
-}
-
-.volume-slider {
-  width: 60px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-  -webkit-appearance: none;
-  appearance: none;
+.controls-menu-panel {
   -webkit-app-region: no-drag;
-}
-
-.volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  background: #fff;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  margin-top: -4px;
-}
-
-.volume-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-}
-
-.volume-slider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  background: #fff;
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-.volume-slider::-moz-range-thumb:hover {
-  transform: scale(1.2);
-}
-
-.volume-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
-}
-
-.volume-slider::-moz-range-track {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
-}
-
-.video-controls-floating {
+  position: absolute;
+  right: 0;
+  bottom: 34px;
+  min-width: 196px;
+  /* A janela é pequena por natureza (um PiP), e pode chegar a 320x180.
+     Sem estes limites o painel transbordava para fora da janela e os itens
+     de cima ficavam inalcançáveis. */
+  max-width: calc(100vw - 20px);
+  max-height: calc(100vh - 44px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  border-radius: 10px;
+  background: var(--surface-strong);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
   display: flex;
-  justify-content: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 1px;
+  z-index: 1200;
 }
 
-.control-button {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(0, 0, 0, 0.8);
-  color: #fff;
-  cursor: pointer;
+.controls-menu-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.controls-menu-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 3px;
+}
+
+.controls-menu-item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  transition: all 0.2s;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  gap: 9px;
+  width: 100%;
+  flex-shrink: 0;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.controls-menu-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.controls-menu-item.active {
+  color: var(--accent);
+}
+
+.controls-menu-item kbd,
+.controls-menu-value {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.controls-menu-separator {
+  height: 1px;
+  flex-shrink: 0;
+  margin: 4px 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.controls-menu-label {
   -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+  padding: 7px 10px 3px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
 }
 
-.control-button:hover {
-  background: rgba(0, 0, 0, 0.9);
-  transform: scale(1.1);
+.controls-menu-rates {
+  -webkit-app-region: no-drag;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 2px 10px 6px;
 }
 
-.control-button:active {
-  transform: scale(0.95);
+.rate-button {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11.5px;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.rate-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.rate-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* ===== Janelas estreitas ===== */
+/* A viewport é a largura real da janela: em tamanhos pequenos, o que é
+   secundário sai da barra em vez de espremer tudo. */
+
+@media (max-width: 460px) {
+  .volume-slider { display: none; }
+}
+
+@media (max-width: 380px) {
+  .seek-button { display: none; }
+  .video-time { min-width: 30px; font-size: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

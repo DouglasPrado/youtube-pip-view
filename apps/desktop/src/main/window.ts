@@ -22,18 +22,21 @@ export async function createWindow(): Promise<
   const defaultWidth = 400;
 
   const ASPECT_RATIO = 16 / 9;
+  const MIN_WIDTH = 320;
 
   const preloadPath = path.resolve(__dirname, "../preload/preload.cjs");
 
   const distPath = path.join(__dirname, "../../dist");
   await startServer(distPath);
 
-  let initialWidth = storedSize?.width || defaultWidth;
+  let initialWidth = Math.max(storedSize?.width || defaultWidth, MIN_WIDTH);
   let initialHeight = Math.round(initialWidth / ASPECT_RATIO);
 
   const win = new BrowserWindow({
     width: initialWidth,
     height: initialHeight,
+    minWidth: MIN_WIDTH,
+    minHeight: Math.round(MIN_WIDTH / ASPECT_RATIO),
     x: storedPosition?.x,
     y: storedPosition?.y,
     frame: false,
@@ -51,6 +54,9 @@ export async function createWindow(): Promise<
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true,
+      // O app existe para tocar vídeo assim que abre; sem isto o Chromium
+      // segura o autoplay esperando um clique dentro do player.
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
 
@@ -79,32 +85,9 @@ export async function createWindow(): Promise<
     }, 100);
   });
 
-  // Manter proporção 16:9
-  let isResizing = false;
-
-  win.on("will-resize", (event: any, newBounds: any) => {
-    if (isResizing) return;
-    event.preventDefault();
-
-    const newHeight = Math.round(newBounds.width / ASPECT_RATIO);
-
-    isResizing = true;
-    win.setSize(newBounds.width, newHeight, false);
-    isResizing = false;
-  });
-
-  win.on("resize", () => {
-    if (isResizing) return;
-
-    const bounds = win.getBounds();
-    const expectedHeight = Math.round(bounds.width / ASPECT_RATIO);
-
-    if (Math.abs(bounds.height - expectedHeight) > 1) {
-      isResizing = true;
-      win.setSize(bounds.width, expectedHeight, false);
-      isResizing = false;
-    }
-  });
+  // Proporção 16:9 aplicada pelo sistema durante o arrasto. Corrigir por
+  // conta própria no will-resize/resize fazia a janela tremer.
+  win.setAspectRatio(ASPECT_RATIO);
 
   // Salvar tamanho e posição
   const saveBounds = () => {
@@ -181,4 +164,29 @@ export function applyMacOSPiPSettings(
     win.setAlwaysOnTop(true, "floating");
     win.setVisibleOnAllWorkspaces(true);
   }
+}
+
+/**
+ * Traz a janela de volta a partir de qualquer estado em que ela possa estar:
+ * escondida, minimizada pelo sistema ou transparente por uma versão antiga
+ * do "minimizar" que só baixava a opacidade.
+ *
+ * É o único caminho de restauração — usado pelo atalho global, pelo ícone da
+ * barra de menu e por uma segunda instância do app.
+ */
+export function restoreWindow(
+  win: InstanceType<typeof BrowserWindow> | null
+): void {
+  if (!win || win.isDestroyed()) return;
+
+  if (win.getOpacity() < 1) {
+    win.setOpacity(1);
+  }
+  if (win.isMinimized()) {
+    win.restore();
+  }
+
+  applyMacOSPiPSettings(win);
+  win.show();
+  win.focus();
 }

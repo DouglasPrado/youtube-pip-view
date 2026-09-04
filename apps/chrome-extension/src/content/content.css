@@ -1,141 +1,166 @@
-/* ===== Per-video "+" button on thumbnails ===== */
+/*
+ * Estilos injetados nas páginas do YouTube.
+ *
+ * Tudo com o prefixo ytview- e valores explícitos: o CSS do YouTube é amplo e
+ * herdaria fonte, cor e espaçamento se deixássemos qualquer coisa em aberto.
+ */
 
-.ytview-video-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 9999;
+/* ===== Botões sobre a miniatura ===== */
+
+.ytview-thumb-actions {
+  position: fixed;
+  z-index: 2147483000;
+  display: none;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+}
+
+.ytview-thumb-actions.ytview-visible {
+  display: flex;
+}
+
+.ytview-thumb-button {
+  all: unset;
+  box-sizing: border-box;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
   border-radius: 50%;
-  background-color: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.82);
   color: #fff;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease, background-color 0.2s ease, transform 0.15s ease;
-  padding: 0;
-  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  transition: background 0.15s ease, transform 0.15s ease;
 }
 
-.ytview-video-btn.ytview-visible {
-  opacity: 1;
-  pointer-events: auto;
+.ytview-thumb-button svg {
+  width: 17px;
+  height: 17px;
+  display: block;
 }
 
-.ytview-video-btn svg {
-  width: 20px;
-  height: 20px;
+.ytview-thumb-button:hover {
+  background: #e94560;
+  transform: scale(1.12);
 }
 
-.ytview-video-btn:disabled {
+.ytview-thumb-button:focus-visible {
+  outline: 2px solid #8ab4f8;
+  outline-offset: 2px;
+}
+
+.ytview-thumb-button.ytview-busy {
+  background: #1a3a5c;
+  cursor: progress;
+}
+
+.ytview-thumb-button.ytview-done,
+.ytview-thumb-button.ytview-already {
+  background: #1b5e20;
+}
+
+.ytview-thumb-button.ytview-failed {
+  background: #b3261e;
+}
+
+.ytview-thumb-button:disabled {
   cursor: default;
 }
 
-.ytview-video-btn.ytview-loading {
-  opacity: 1;
-  background-color: rgba(26, 58, 92, 0.9);
-  color: #8ab4f8;
-  animation: ytview-pulse 0.8s infinite alternate;
-}
+/* ===== Botão da playlist ===== */
 
-.ytview-video-btn.ytview-success {
-  opacity: 1;
-  background-color: rgba(27, 61, 42, 0.9);
-  color: #81c995;
-}
-
-.ytview-video-btn.ytview-error {
-  opacity: 1;
-  background-color: rgba(60, 20, 20, 0.9);
-  color: #f28b82;
-}
-
-@keyframes ytview-pulse {
-  from { opacity: 0.7; }
-  to { opacity: 1; }
-}
-
-/* ===== Playlist "Add all" button ===== */
-
-.ytview-queue-btn {
+.ytview-playlist-button {
+  all: unset;
+  box-sizing: border-box;
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 2147483000;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 18px;
-  background-color: #272727;
+  padding: 11px 18px;
+  border-radius: 22px;
+  background: #e94560;
   color: #fff;
-  font-family: "Roboto", "Arial", sans-serif;
+  font-family: "Roboto", Arial, sans-serif;
   font-size: 14px;
   font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s ease, color 0.2s ease;
   line-height: 1;
-  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  transition: background 0.15s ease;
 }
 
-.ytview-queue-btn:hover {
-  background-color: #3f3f3f;
-}
-
-.ytview-queue-btn:active {
-  background-color: #525252;
-}
-
-.ytview-queue-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.ytview-queue-btn svg {
+.ytview-playlist-button svg {
+  width: 16px;
+  height: 16px;
+  display: block;
   flex-shrink: 0;
 }
 
-.ytview-queue-btn.ytview-loading {
-  background-color: #1a3a5c;
-  color: #8ab4f8;
+.ytview-playlist-button:hover {
+  background: #d63850;
 }
 
-.ytview-queue-btn.ytview-success {
-  background-color: #1b3d2a;
-  color: #81c995;
+.ytview-playlist-button:focus-visible {
+  outline: 2px solid #8ab4f8;
+  outline-offset: 3px;
 }
 
-.ytview-queue-btn.ytview-error {
-  background-color: #3c1414;
-  color: #f28b82;
+.ytview-playlist-button:disabled {
+  cursor: progress;
+  opacity: 0.85;
 }
 
-/* Floating fallback */
-.ytview-queue-btn.ytview-floating {
+.ytview-playlist-button.ytview-done {
+  background: #1b5e20;
+}
+
+.ytview-playlist-button.ytview-failed {
+  background: #b3261e;
+}
+
+/* ===== Aviso ===== */
+
+.ytview-toast {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 9999;
-  padding: 12px 20px;
-  font-size: 14px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  background-color: #e94560;
+  left: 50%;
+  bottom: 26px;
+  z-index: 2147483001;
+  transform: translateX(-50%) translateY(6px);
+  max-width: 80vw;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #1b5e20;
   color: #fff;
+  font-family: "Roboto", Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
-.ytview-queue-btn.ytview-floating:hover {
-  background-color: #d63850;
+.ytview-toast.ytview-toast-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
-.ytview-queue-btn.ytview-floating.ytview-loading {
-  background-color: #1a3a5c;
+.ytview-toast.ytview-toast-error {
+  background: #8c2438;
 }
 
-.ytview-queue-btn.ytview-floating.ytview-success {
-  background-color: #1b3d2a;
-}
-
-.ytview-queue-btn.ytview-floating.ytview-error {
-  background-color: #3c1414;
+@media (prefers-reduced-motion: reduce) {
+  .ytview-thumb-button,
+  .ytview-playlist-button,
+  .ytview-toast {
+    transition: none;
+  }
 }

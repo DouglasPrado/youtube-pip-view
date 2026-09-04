@@ -1,10 +1,12 @@
+import { ClipboardPaste } from "lucide-react";
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
-import { useVideoId } from "../hooks/useVideoId";
+import { mediaKey, parseMediaUrl } from "@ytview/youtube-utils";
+import { strings } from "../strings";
 
 interface VideoInputProps {
   isVisible: boolean;
   onClose: () => void;
-  onSubmit: (videoId: string) => void;
+  onSubmit: (videoId: string, startSeconds: number) => void;
   currentVideoId: string | null;
 }
 
@@ -16,50 +18,53 @@ export function VideoInput({
 }: VideoInputProps) {
   const [inputValue, setInputValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [clipboardSuggestion, setClipboardSuggestion] = useState<string | null>(
+    null
+  );
   const inputRef = useRef<HTMLInputElement>(null);
-  const extractVideoId = useVideoId();
-  const autoHideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // onClose muda de identidade a cada render do App. Guardar numa ref deixa o
+  // efeito abaixo depender só de isVisible - senão ele roda de novo a cada
+  // render e o setInputValue("") apaga o que a pessoa está digitando.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
-    if (isVisible) {
-      inputRef.current?.focus();
-      setInputValue("");
-      setError(null);
-
-      // Tentar colar automaticamente da área de transferência
-      const pasteFromClipboard = async () => {
-        try {
-          const text = await navigator.clipboard.readText();
-          if (text && text.trim()) {
-            setInputValue(text);
-          }
-        } catch (err) {
-          // Ignorar erro se não tiver permissão de clipboard
-        }
-      };
-      pasteFromClipboard();
-
-      // Auto-ocultar após 30 segundos sem interação
-      autoHideTimeoutRef.current = setTimeout(() => {
-        onClose();
-      }, 30000);
-    } else {
-      if (autoHideTimeoutRef.current) {
-        clearTimeout(autoHideTimeoutRef.current);
-      }
+    if (!isVisible) {
+      setClipboardSuggestion(null);
+      return;
     }
 
-    return () => {
-      if (autoHideTimeoutRef.current) {
-        clearTimeout(autoHideTimeoutRef.current);
+    inputRef.current?.focus();
+    setInputValue("");
+    setError(null);
+    setClipboardSuggestion(null);
+
+    // Só preencher sozinho quando o que está copiado é mesmo um vídeo. Se for
+    // outra coisa qualquer, não encher o campo de lixo que a pessoa vai ter
+    // que apagar.
+    const readClipboard = async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        const trimmed = text?.trim();
+        if (!trimmed) return;
+
+        if (parseMediaUrl(trimmed)) {
+          setInputValue(trimmed);
+          inputRef.current?.select();
+        } else {
+          setClipboardSuggestion(trimmed);
+        }
+      } catch {
+        // Sem permissão de clipboard: seguir sem sugestão
       }
     };
-  }, [isVisible, onClose]);
+    readClipboard();
+  }, [isVisible]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isVisible) {
-        onClose();
+        onCloseRef.current();
       }
     };
 
@@ -69,55 +74,54 @@ export function VideoInput({
         window.removeEventListener("keydown", handleEscape as any);
       };
     }
-  }, [isVisible, onClose]);
+  }, [isVisible]);
 
   const handleSubmit = () => {
-    console.log("handleSubmit chamado, inputValue:", inputValue);
     const trimmedValue = inputValue.trim();
 
     if (!trimmedValue) {
-      setError("Por favor, insira uma URL ou ID do vídeo");
+      setError(strings.input.empty);
       inputRef.current?.focus();
       return;
     }
 
-    const videoId = extractVideoId(trimmedValue);
-    console.log("VideoId extraído:", videoId);
+    const ref = parseMediaUrl(trimmedValue);
 
-    if (!videoId) {
-      setError(
-        "URL ou ID do vídeo inválido. Use um link do YouTube ou um ID de 11 caracteres."
-      );
+    if (!ref) {
+      setError(strings.input.invalid);
       inputRef.current?.focus();
       return;
     }
 
-    if (videoId === currentVideoId) {
-      setError("Este vídeo já está sendo reproduzido");
-      inputRef.current?.focus();
-      return;
-    }
-
-    console.log("Chamando onSubmit com videoId:", videoId);
+    // Reenviar o vídeo que já está tocando é um pedido legítimo: recomeçar.
     setError(null);
-    // Não fechar aqui, deixar o App.tsx gerenciar o fechamento
-    onSubmit(videoId);
+    onSubmit(mediaKey(ref), ref.startSeconds);
   };
 
-  const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       handleSubmit();
     }
   };
 
-  const handlePaste = () => {
-    // Limpar erro quando colar
+  const usePastedText = () => {
+    if (!clipboardSuggestion) return;
+    setInputValue(clipboardSuggestion);
+    setClipboardSuggestion(null);
     setError(null);
+    inputRef.current?.focus();
   };
 
   if (!isVisible) {
     return null;
   }
+
+  const isSameVideo =
+    currentVideoId !== null &&
+    (() => {
+      const ref = parseMediaUrl(inputValue.trim());
+      return ref ? mediaKey(ref) === currentVideoId : false;
+    })();
 
   return (
     <div
@@ -134,23 +138,32 @@ export function VideoInput({
         onClick={(e) => e.stopPropagation()}
       >
         <label htmlFor="video-input" className="video-input-label">
-          Cole a URL ou ID do vídeo do YouTube
+          {strings.input.label}
         </label>
         <input
           id="video-input"
           ref={inputRef}
           type="text"
           className={`video-input-field ${error ? "error" : ""}`}
-          placeholder="Cole a URL ou ID do vídeo..."
+          placeholder={strings.input.placeholder}
           value={inputValue}
           onChange={(e) => {
             setInputValue(e.target.value);
             setError(null);
           }}
-          onKeyPress={handleKeyPress}
-          onPaste={handlePaste}
+          onKeyDown={handleKeyDown}
+          autoComplete="off"
+          spellCheck={false}
         />
         {error && <span className="video-input-error">{error}</span>}
+
+        {clipboardSuggestion && !error && (
+          <button className="video-input-clipboard" onClick={usePastedText}>
+            <ClipboardPaste size={13} />
+            {strings.input.usePasted}
+          </button>
+        )}
+
         <div className="video-input-actions">
           <button
             className="video-input-button secondary"
@@ -160,7 +173,7 @@ export function VideoInput({
               onClose();
             }}
           >
-            Cancelar
+            {strings.input.cancel}
           </button>
           <button
             className="video-input-button primary"
@@ -170,7 +183,7 @@ export function VideoInput({
               handleSubmit();
             }}
           >
-            OK
+            {isSameVideo ? strings.input.restart : strings.input.play}
           </button>
         </div>
       </div>
