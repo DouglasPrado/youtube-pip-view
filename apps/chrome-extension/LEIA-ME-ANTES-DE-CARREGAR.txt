@@ -1,0 +1,17 @@
+NÃO carregue ESTA pasta no Chrome.
+
+Aqui está o código-fonte: o manifest.json aponta para arquivos .ts, que o
+navegador não executa. Carregar esta pasta registra uma extensão vazia — sem
+content script, sem service worker — e nada aparece no YouTube.
+
+A pasta certa é a compilada:
+
+    apps/chrome-extension/dist
+
+Para gerar/atualizar:
+
+    pnpm turbo run build --filter=@ytview/chrome-extension
+
+Depois, em chrome://extensions, com o Modo do desenvolvedor ligado:
+"Carregar sem compactação" e selecione a pasta dist (ou a cópia em
+~/Downloads/YTView-extensao).

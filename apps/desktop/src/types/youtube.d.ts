@@ -24,6 +24,7 @@ declare namespace YT {
     height?: string | number;
     width?: string | number;
     videoId?: string;
+    host?: string;
     playerVars?: {
       autoplay?: 0 | 1;
       cc_lang_pref?: string;
@@ -47,11 +48,11 @@ declare namespace YT {
       start?: number;
     };
     events?: {
-      onReady?: (event: PlayerEvent) => void;
-      onStateChange?: (event: PlayerEvent) => void;
+      onReady?: (event: any) => void;
+      onStateChange?: (event: any) => void;
       onPlaybackQualityChange?: (event: PlayerEvent) => void;
       onPlaybackRateChange?: (event: PlayerEvent) => void;
-      onError?: (event: PlayerEvent) => void;
+      onError?: (event: any) => void;
       onApiChange?: (event: PlayerEvent) => void;
     };
   }
@@ -59,7 +60,10 @@ declare namespace YT {
   class Player {
     constructor(containerId: string | HTMLElement, options: PlayerOptions);
     destroy(): void;
-    loadVideoById(videoId: string, startSeconds?: number): void;
+    loadVideoById(
+      videoId: string | { videoId: string; startSeconds?: number },
+      startSeconds?: number
+    ): void;
     cueVideoById(videoId: string, startSeconds?: number): void;
     playVideo(): void;
     pauseVideo(): void;
@@ -77,6 +81,15 @@ declare namespace YT {
     getAvailableQualityLevels(): string[];
     setPlaybackQuality(suggestedQuality: string): void;
     getIframe(): HTMLIFrameElement;
+    setVolume(volume: number): void;
+    getVolume(): number;
+    mute(): void;
+    unMute(): void;
+    isMuted(): boolean;
+    getPlaybackRate(): number;
+    loadModule(module: string): void;
+    unloadModule(module: string): void;
+    setOption(module: string, option: string, value: unknown): void;
     addEventListener(event: string, listener: (event: PlayerEvent) => void): void;
     removeEventListener(event: string, listener: (event: PlayerEvent) => void): void;
   }

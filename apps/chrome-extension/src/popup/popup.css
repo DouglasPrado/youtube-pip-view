@@ -1,3 +1,15 @@
+:root {
+  --bg: #16181d;
+  --surface: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.12);
+  --text: #f1f3f5;
+  --text-dim: rgba(241, 243, 245, 0.6);
+  --accent: #e94560;
+  --online: #4caf6d;
+  --offline: #8a9099;
+  --focus: #8ab4f8;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -5,97 +17,247 @@
 }
 
 body {
-  width: 350px;
-  min-height: 160px;
+  width: 320px;
+  background: var(--bg);
+  color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #1a1a2e;
-  color: #eee;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 .popup {
-  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 14px;
+}
+
+/* ===== Cabeçalho ===== */
+
+.popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .popup-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
-  text-align: center;
-  color: #fff;
+  letter-spacing: -0.01em;
+}
+
+.popup-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.popup-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--offline);
+  flex-shrink: 0;
+}
+
+.popup-status-online i {
+  background: var(--online);
 }
 
 .popup-loading {
-  text-align: center;
-  color: #888;
   font-size: 13px;
-  padding: 20px 0;
-}
-
-.popup-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 20px 0;
+  color: var(--text-dim);
   text-align: center;
+  padding: 18px 0;
 }
 
-.popup-empty p {
-  color: #888;
-  font-size: 13px;
-  line-height: 1.4;
-}
+/* ===== Vídeo da aba ===== */
 
-.popup-button {
-  padding: 10px 16px;
-  border: none;
-  border-radius: 6px;
-  background: #e94560;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-  width: 100%;
-}
-
-.popup-button:hover {
-  background: #c73652;
-}
-
-.popup-button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.popup-error {
-  color: #e94560;
-  font-size: 12px;
-  text-align: center;
-}
-
-.popup-preview {
+.popup-video {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  align-items: center;
 }
 
 .popup-thumbnail {
   width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
   border-radius: 8px;
+  background: var(--surface);
+  display: block;
 }
 
-.pip-opening {
-  background: #3a3a5e;
+/* ===== Colar link ===== */
+
+.popup-thumbnail-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-dim);
+  border: 1px dashed var(--border);
 }
 
-.pip-success {
-  background: #1b3d2a;
+.popup-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.pip-error {
-  background: #e94560;
+.popup-empty-title {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.popup-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.popup-input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.popup-input:focus {
+  border-color: var(--accent);
+}
+
+.popup-input::placeholder {
+  color: rgba(241, 243, 245, 0.35);
+}
+
+.popup-input.has-error {
+  border-color: var(--accent);
+}
+
+.popup-error {
+  font-size: 11.5px;
+  color: #ff8a9b;
+}
+
+/* ===== Botões ===== */
+
+.popup-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.popup-button {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.popup-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.popup-button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.popup-button.primary:hover:not(:disabled) {
+  background: #d63850;
+}
+
+.popup-button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.popup-button.is-sending,
+.popup-button.is-launching {
+  background: #33415c;
+  border-color: #33415c;
+}
+
+.popup-button.is-done {
+  background: #1b5e20;
+  border-color: #1b5e20;
+}
+
+.popup-button.is-failed {
+  background: #8c2438;
+  border-color: #8c2438;
+}
+
+/* ===== Rodapé com a fila ===== */
+
+.popup-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.popup-now {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-now span {
+  color: var(--text-dim);
+}
+
+.popup-queue-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.popup-queue-count {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.popup-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.popup-link:hover {
+  text-decoration: underline;
 }

@@ -1,46 +1,48 @@
 import electron from 'electron';
-const { globalShortcut, BrowserWindow } = electron;
+import { restoreWindow } from './window.js';
+import { strings } from './strings.js';
+const { globalShortcut, BrowserWindow, dialog } = electron;
 
 let mainWindow: InstanceType<typeof BrowserWindow> | null = null;
 
 export function registerShortcuts(window: InstanceType<typeof BrowserWindow>): void{
   mainWindow = window;
 
-  // Cmd+Shift+Y: Abrir/focar janela ou restaurar se minimizada/transparente
+  // Cmd+Shift+Y: trazer a janela de volta de qualquer estado
   const registered = globalShortcut.register('CommandOrControl+Shift+Y', () => {
-    if (mainWindow) {
-      const opacity = mainWindow.getOpacity();
-      const isTransparent = opacity < 0.5;
+    restoreWindow(mainWindow);
+  });
 
-      if (isTransparent) {
-        // Se estiver transparente (minimizada), restaurar opacidade
-        mainWindow.setOpacity(1.0);
-        mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-        mainWindow.show();
-        mainWindow.focus();
-      } else if (mainWindow.isMinimized()) {
-        // Se estiver minimizada, restaurar
-        mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
-      } else if (mainWindow.isVisible()) {
-        // Se estiver visível, focar
-        mainWindow.focus();
-      } else {
-        // Se estiver escondida, mostrar
-        mainWindow.show();
-        mainWindow.focus();
+  // Pausar sem precisar trazer a janela para frente - o ponto do app é
+  // assistir enquanto se faz outra coisa.
+  const playPauseRegistered = globalShortcut.register(
+    'CommandOrControl+Shift+Space',
+    () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('toggle-play');
       }
     }
-  });
+  );
+
+  if (!playPauseRegistered) {
+    console.warn('Atalho global de pausa (⌘⇧Espaço) indisponível');
+  }
 
   if (!registered) {
     console.error('Falha ao registrar atalho Control+Shift+Y');
+
+    // Sem esse atalho e sem essa mensagem, a pessoa fica sem saber por que a
+    // janela não volta. O menu do ícone na barra continua funcionando.
+    void dialog.showMessageBox({
+      type: 'warning',
+      title: strings.dialogs.shortcutTakenTitle,
+      message: strings.dialogs.shortcutTakenMessage,
+      detail: strings.dialogs.shortcutTakenDetail,
+      buttons: [strings.dialogs.ok],
+    });
   } else {
     console.log('Atalho Control+Shift+Y registrado com sucesso');
   }
-
-  // Cmd+W: Fechar janela (minimizar para dock) - gerenciado no main.ts
 }
 
 export function unregisterShortcuts(): void {

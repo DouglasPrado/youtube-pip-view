@@ -11,8 +11,9 @@
     "preview": "vite preview",
     "electron:dev": "electron .",
     "electron:build": "npm run build && electron-builder",
-    "clean": "rm -rf dist dist-electron",
-    "postinstall": "electron-builder install-app-deps"
+    "clean": "rm -rf dist dist-electron dist-test",
+    "postinstall": "electron-builder install-app-deps",
+    "test": "tsc src/main/queue-logic.ts --outDir dist-test --module es2020 --target es2020 --skipLibCheck && node --test test/"
   },
   "keywords": [
     "youtube",

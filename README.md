@@ -11,10 +11,12 @@ YTView creates a compact, minimalist window that plays YouTube videos without ad
 - **Ad-free playback** - Watch YouTube videos without any ads
 - **Always on top** - The window stays visible over all other applications
 - **Minimalist interface** - No distractions, just the video
-- **Video queue** - Add multiple videos to a queue and watch them in sequence
+- **Full keyboard control** - Play, seek, volume, queue navigation — all from the keyboard
+- **Playback speed and captions** - 0.25× to 2×, plus captions, from the ⋯ menu
+- **Video queue** - Line up videos, reorder by dragging, play next
 - **Chrome extension** - Quickly send videos from your browser to YTView
-- **Keyboard shortcuts** - Fast control with global shortcuts
-- **Remembers last video** - The app remembers which video you were watching
+- **Menu bar icon** - Show, hide, open the queue or quit from the macOS menu bar
+- **Remembers where you stopped** - Reopens the last video and resumes its position
 
 ## Chrome Extension
 
@@ -31,23 +33,47 @@ The extension communicates with the desktop app via a local API on port `8765`.
 YTView includes a built-in video queue so you can line up multiple videos:
 
 - Add videos by URL or paste multiple links at once
-- Play all queued videos in sequence
-- Remove individual items or clear the entire queue
+- Play all queued videos in sequence — it advances on its own
+- Drag to reorder, or send an item to play right after the current one
+- Clearing the queue can be undone for 10 seconds
 - Queue is persisted between sessions
 
 ## How to Use
 
 1. **Open the app** - On launch, you'll see a field to enter the video
-2. **Enter a video** - Paste the full YouTube URL (e.g., `https://www.youtube.com/watch?v=VIDEO_ID`) or just the video ID
-3. **Confirm** - Press Enter or click OK
-4. **Watch** - The video loads ad-free and you can watch normally
-5. **Switch video** - Click anywhere on the video to open the input field again
+2. **Enter a video** - Paste any YouTube link: `watch?v=`, `youtu.be`, Shorts,
+   live, or just the 11-character video ID. A `&t=` timestamp is honored.
+3. **Confirm** - Press Enter or click **Tocar**
+4. **Watch** - Click the video to pause, double-click for fullscreen
+5. **Switch video** - Press **Cmd+L**, or use **Trocar de vídeo** in the ⋯ menu
+
+The interface is in Brazilian Portuguese; this documentation is in English.
 
 ## Keyboard Shortcuts
 
-- **Cmd+Shift+Y**: Open or focus the YTView window
+Global (work even when YTView is not focused):
+
+- **Cmd+Shift+Y**: Bring the window back from any state (hidden or minimized)
+- **Cmd+Shift+Space**: Play / pause without switching windows
+
+In the player window:
+
+- **Space** or **K**: Play / pause
+- **← / →**: Back / forward 5 seconds (hold **Shift** for 30)
+- **J / L**: Back / forward 10 seconds
+- **↑ / ↓**: Volume
+- **0-9**: Jump to that point of the video (5 = halfway)
+- **M**: Mute · **F**: Fullscreen
+- **N / P**: Next / previous in the queue
+- **Cmd+L**: Paste a new link
+- **Cmd+W**: Hide the window - the video keeps its place
 - **Cmd+Q**: Quit the app
-- **Cmd+W**: Close the window
+
+Closing the window with the ✕ button hides it too. To quit, use Cmd+Q or
+**Quit YTView** in the menu bar icon.
+
+If ⌘⇧Y is already taken by another app, YTView says so on launch — the menu bar
+icon still brings the window back.
 
 ## Requirements
 
@@ -78,6 +104,15 @@ pnpm turbo run build
 cd apps/desktop && npm run electron:dev
 ```
 
+### Run the tests
+
+```bash
+pnpm test
+```
+
+Covers YouTube link parsing (every accepted URL shape) and the queue rules
+(reordering, removing what is playing, auto-advance).
+
 ### Build the app (.app / .dmg)
 
 ```bash
@@ -85,4 +120,4 @@ pnpm turbo run build
 cd apps/desktop && npm run electron:build
 ```
 
-The `.dmg` will be generated in `apps/desktop/dist/`.
+The `.dmg` will be generated in `apps/desktop/release/`.

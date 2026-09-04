@@ -13,7 +13,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "tsc && node --test test/"
   },
   "devDependencies": {
     "typescript": "^5.3.3"

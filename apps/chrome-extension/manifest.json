@@ -1,16 +1,40 @@
 {
   "manifest_version": 3,
-  "name": "YouTube PiP View",
+  "name": "YTView — YouTube flutuante",
   "version": "1.0.0",
-  "description": "Watch YouTube videos in a Picture-in-Picture floating window",
-  "permissions": ["activeTab", "tabs", "storage"],
-  "host_permissions": ["http://localhost:8765/*"],
+  "description": "Envia vídeos do YouTube, Vimeo, Twitch e Dailymotion para a janela flutuante do YTView e monta sua fila sem sair da página.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "contextMenus",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://localhost/*"
+  ],
   "action": {
     "default_popup": "src/popup/index.html",
+    "default_title": "YTView",
     "default_icon": {
       "16": "public/icons/icon16.png",
       "48": "public/icons/icon48.png",
       "128": "public/icons/icon128.png"
+    }
+  },
+  "commands": {
+    "play-in-ytview": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+1",
+        "mac": "Command+Shift+1"
+      },
+      "description": "Tocar este vídeo no YTView"
+    },
+    "queue-in-ytview": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+2",
+        "mac": "Command+Shift+2"
+      },
+      "description": "Adicionar este vídeo à fila do YTView"
     }
   },
   "background": {
@@ -19,8 +43,17 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
-      "js": ["src/content/content.ts"],
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://youtu.be/*",
+        "*://*.vimeo.com/*",
+        "*://*.twitch.tv/*",
+        "*://*.dailymotion.com/*",
+        "*://dai.ly/*"
+      ],
+      "js": [
+        "src/content/content.ts"
+      ],
       "run_at": "document_idle"
     }
   ],

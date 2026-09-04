@@ -1,130 +1,127 @@
-import { SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react";
+import {
+  ExternalLink,
+  Gauge,
+  ListOrdered,
+  MoreHorizontal,
+  Pause,
+  Play,
+  RotateCcw,
+  RotateCw,
+  SkipBack,
+  SkipForward,
+  Subtitles,
+  Volume1,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { QueueState } from "../../types";
+import { PLAYER_STATE } from "../player/types";
+import type { PlayerFacade } from "../player/types";
+import { strings } from "../strings";
+
+const SEEK_STEP = 10;
 
 interface VideoControlsProps {
-  player: any;
+  player: PlayerFacade | null;
   videoId: string | null;
   showControls?: boolean;
-  volume?: number;
-  onVolumeChange?: (volume: number) => void;
+  volume: number;
+  isMuted: boolean;
+  onVolumeChange: (volume: number) => void;
+  onMutedChange: (muted: boolean) => void;
+  onOpenQueue: () => void;
+  onChangeVideo: () => void;
+  onOpenInYouTube: () => void;
+  /** Avisa o App para não esconder os controles enquanto estão em uso. */
+  onInteractingChange: (interacting: boolean) => void;
+}
+
+export function formatTime(seconds: number): string {
+  if (!seconds || isNaN(seconds) || seconds < 0) return "0:00";
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  if (hours > 0) {
+    return `${hours}:${mins.toString().padStart(2, "0")}:${secs
+      .toString()
+      .padStart(2, "0")}`;
+  }
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 export function VideoControls({
   player,
   videoId,
   showControls = false,
-  volume = 100,
+  volume,
+  isMuted,
   onVolumeChange,
+  onMutedChange,
+  onOpenQueue,
+  onChangeVideo,
+  onOpenInYouTube,
+  onInteractingChange,
 }: VideoControlsProps) {
-  const controlsRef = useRef<HTMLDivElement>(null);
-  const progressRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const lastUpdateTimeRef = useRef<number>(Date.now());
-  const lastKnownTimeRef = useRef<number>(0);
-  const endedTriggeredForVideoRef = useRef<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(true); // Assumir que está tocando inicialmente (autoplay)
+  const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [seekPreview, setSeekPreview] = useState<number | null>(null);
   const [canGoToPrevious, setCanGoToPrevious] = useState(false);
   const [canGoToNext, setCanGoToNext] = useState(false);
-  const previousVolumeRef = useRef(volume);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [captionsOn, setCaptionsOn] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  if (!videoId) {
-    return null;
-  }
-
-  // Atualizar progresso do vídeo usando listener de mensagens do YouTube
+  // Tempo e duração vêm do player. Nada de estimativa por relógio.
   useEffect(() => {
-    if (!player || !videoId) return;
-
-    let cleanup: (() => void) | undefined;
-
-    if (player?.onProgress) {
-      cleanup = player.onProgress((time: number, dur: number) => {
-        if (time !== undefined && dur !== undefined) {
-          // Sempre atualizar duração quando disponível
-          if (dur > 0) {
-            setDuration(dur);
-          }
-          // Atualizar tempo atual apenas se não estiver arrastando
-          if (!isSeeking && time >= 0) {
-            setCurrentTime(time);
-            lastKnownTimeRef.current = time;
-            lastUpdateTimeRef.current = Date.now();
-          }
-        }
-      });
-    }
-
-    // Solicitar progresso periodicamente
-    const requestProgress = () => {
-      if (player?.requestProgress) {
-        player.requestProgress();
+    if (!player) return;
+    return player.onProgress(({ currentTime: time, duration: total }) => {
+      setDuration(total);
+      if (seekPreview === null) {
+        setCurrentTime(time);
       }
-    };
+    });
+  }, [player, seekPreview]);
 
-    // Sistema de atualização contínua baseado em estimativa
-    const updateProgress = () => {
-      if (!isSeeking && isPlaying) {
-        const now = Date.now();
-        const elapsed = (now - lastUpdateTimeRef.current) / 1000;
-        const newTime = lastKnownTimeRef.current + elapsed;
-
-        // Atualizar apenas se temos duração ou se ainda não chegamos no limite
-        if (duration > 0) {
-          if (newTime <= duration) {
-            setCurrentTime(newTime);
-          } else {
-            setCurrentTime(duration);
-          }
-        } else {
-          // Sem duração, apenas incrementar
-          setCurrentTime(newTime);
-        }
-      }
-    };
-
-    const requestInterval = setInterval(requestProgress, 2000);
-    const updateInterval = setInterval(updateProgress, 500);
-
-    return () => {
-      if (cleanup) cleanup();
-      clearInterval(requestInterval);
-      clearInterval(updateInterval);
-    };
-  }, [player, videoId, isSeeking, isPlaying, duration]);
-
-  // Resetar estado local ao trocar de vídeo
+  // Estado real de reprodução: o botão para de mentir quando o autoplay é
+  // bloqueado ou quando o vídeo é pausado por fora.
   useEffect(() => {
-    if (!videoId) return;
+    if (!player) return;
+    setIsPlaying(player.isPlaying());
+
+    return player.onStateChange((state) => {
+      if (state === PLAYER_STATE.PLAYING || state === PLAYER_STATE.BUFFERING) {
+        setIsPlaying(true);
+      } else if (
+        state === PLAYER_STATE.PAUSED ||
+        state === PLAYER_STATE.ENDED ||
+        state === PLAYER_STATE.UNSTARTED ||
+        state === PLAYER_STATE.CUED
+      ) {
+        setIsPlaying(false);
+      }
+
+      if (state === PLAYER_STATE.PLAYING) {
+        setPlaybackRate(player.getPlaybackRate());
+      }
+    });
+  }, [player]);
+
+  // Trocou de vídeo: zerar o que é do vídeo anterior.
+  useEffect(() => {
     setCurrentTime(0);
     setDuration(0);
-    setIsPlaying(true);
-    setIsSeeking(false);
-    lastKnownTimeRef.current = 0;
-    lastUpdateTimeRef.current = Date.now();
-    endedTriggeredForVideoRef.current = null;
+    setSeekPreview(null);
+    setCaptionsOn(false);
   }, [videoId]);
 
-  // Fallback: detectar fim por progresso para garantir auto-avançar da fila
-  useEffect(() => {
-    if (!videoId || !window.electronAPI?.notifyVideoEnded) return;
-    if (!isPlaying || isSeeking || duration <= 0) return;
-
-    const endThreshold = Math.max(duration - 0.5, duration * 0.995);
-    if (currentTime < endThreshold) return;
-    if (endedTriggeredForVideoRef.current === videoId) return;
-
-    endedTriggeredForVideoRef.current = videoId;
-    window.electronAPI.notifyVideoEnded(videoId);
-  }, [videoId, currentTime, duration, isPlaying, isSeeking]);
-
   const resolveCurrentQueueIndex = (queueState: QueueState): number => {
-    if (queueState.currentIndex >= 0 && queueState.currentIndex < queueState.items.length) {
+    if (
+      queueState.currentIndex >= 0 &&
+      queueState.currentIndex < queueState.items.length
+    ) {
       const currentItem = queueState.items[queueState.currentIndex];
       if (currentItem?.videoId === videoId) {
         return queueState.currentIndex;
@@ -155,133 +152,55 @@ export function VideoControls({
     }
 
     let isMounted = true;
-    let cleanupQueueUpdatedListener: (() => void) | undefined;
 
-    const syncQueueState = async () => {
-      try {
-        const queueState = await window.electronAPI.getQueue();
-        if (!isMounted) return;
-        updateQueueNavigationState(queueState);
-      } catch {
+    window.electronAPI
+      .getQueue()
+      .then((queueState) => {
+        if (isMounted) updateQueueNavigationState(queueState);
+      })
+      .catch(() => {
         if (isMounted) {
           setCanGoToPrevious(false);
           setCanGoToNext(false);
         }
-      }
-    };
-
-    syncQueueState();
-
-    if (window.electronAPI?.onQueueUpdated) {
-      cleanupQueueUpdatedListener = window.electronAPI.onQueueUpdated((queueState) => {
-        updateQueueNavigationState(queueState);
       });
-    }
+
+    const cleanup = window.electronAPI.onQueueUpdated?.((queueState) => {
+      updateQueueNavigationState(queueState);
+    });
 
     return () => {
       isMounted = false;
-      cleanupQueueUpdatedListener?.();
+      cleanup?.();
     };
   }, [videoId]);
 
-  const formatTime = (seconds: number): string => {
-    if (!seconds || isNaN(seconds)) return "0:00";
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    if (hours > 0) {
-      return `${hours}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-    }
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  // Usar duração real para a barra de progresso; fallback apenas para permitir arrastar
-  const effectiveDuration = duration > 0 ? duration : 600;
-  const progressPercentage =
-    effectiveDuration > 0 ? (currentTime / effectiveDuration) * 100 : 0;
-
-  const togglePlayPause = () => {
-    const iframe = document.querySelector(
-      ".youtube-iframe-element"
-    ) as HTMLIFrameElement;
-
-    if (isPlaying) {
-      // Pausar
-      if (player?.pause) {
-        player.pause();
-      } else if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage(
-          JSON.stringify({ event: "command", func: "pauseVideo", args: "" }),
-          "https://www.youtube.com"
-        );
+  // Fechar o menu ao clicar fora
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
       }
-      setIsPlaying(false);
-    } else {
-      // Play
-      if (player?.play) {
-        player.play();
-      } else if (iframe?.contentWindow) {
-        iframe.contentWindow.postMessage(
-          JSON.stringify({ event: "command", func: "playVideo", args: "" }),
-          "https://www.youtube.com"
-        );
-      }
-      setIsPlaying(true);
-      // Resetar tempo de atualização quando começar a tocar
-      // O sistema de atualização vai continuar a partir do currentTime atual
-    }
-  };
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
 
-  const handleProgressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const percentage = parseFloat(e.target.value);
-    setIsSeeking(true);
-    // Atualizar visualmente enquanto arrasta
-    const seekTime = (percentage / 100) * effectiveDuration;
-    setCurrentTime(seekTime);
-  };
+  // Enquanto o menu está aberto, os controles não podem sumir por baixo dele.
+  useEffect(() => {
+    onInteractingChange(menuOpen);
+  }, [menuOpen, onInteractingChange]);
 
-  const handleProgressMouseDown = () => {
-    setIsSeeking(true);
-  };
+  if (!videoId) {
+    return null;
+  }
 
-  const handleProgressMouseUp = () => {
-    if (player?.seekTo && progressRef.current) {
-      const percentage = parseFloat(progressRef.current.value);
-      const seekTime = (percentage / 100) * effectiveDuration;
-      player.seekTo(seekTime);
-      setCurrentTime(seekTime);
-      lastKnownTimeRef.current = seekTime;
-      lastUpdateTimeRef.current = Date.now();
-    }
-    setIsSeeking(false);
-  };
-
-  const handleProgressTouchEnd = () => {
-    if (player?.seekTo && progressRef.current) {
-      const percentage = parseFloat(progressRef.current.value);
-      const seekTime = (percentage / 100) * effectiveDuration;
-      player.seekTo(seekTime);
-      setCurrentTime(seekTime);
-      lastKnownTimeRef.current = seekTime;
-      lastUpdateTimeRef.current = Date.now();
-    }
-    setIsSeeking(false);
-  };
-
-  const handleMuteToggle = () => {
-    if (isMuted) {
-      // Unmute: restaurar volume anterior
-      setIsMuted(false);
-      if (player?.unMute) player.unMute();
-      if (onVolumeChange) onVolumeChange(previousVolumeRef.current || 100);
-    } else {
-      // Mute: salvar volume atual e mutar
-      previousVolumeRef.current = volume;
-      setIsMuted(true);
-      if (player?.mute) player.mute();
-      if (onVolumeChange) onVolumeChange(0);
-    }
-  };
+  const hasDuration = duration > 0;
+  const displayTime = seekPreview ?? currentTime;
+  const progressPercentage = hasDuration
+    ? Math.min(100, (displayTime / duration) * 100)
+    : 0;
 
   const handlePlaylistNavigation = async (direction: "previous" | "next") => {
     if (!window.electronAPI?.getQueue || !window.electronAPI?.playFromQueue) return;
@@ -291,95 +210,185 @@ export function VideoControls({
       const currentIndex = resolveCurrentQueueIndex(queueState);
       if (currentIndex === -1) return;
 
-      const targetIndex = direction === "next" ? currentIndex + 1 : currentIndex - 1;
+      const targetIndex =
+        direction === "next" ? currentIndex + 1 : currentIndex - 1;
       if (targetIndex < 0 || targetIndex >= queueState.items.length) return;
 
       await window.electronAPI.playFromQueue(targetIndex);
     } catch (error) {
       console.error(
-        `Erro ao navegar para o vídeo ${direction === "next" ? "seguinte" : "anterior"}:`,
+        `Erro ao navegar para o vídeo ${
+          direction === "next" ? "seguinte" : "anterior"
+        }:`,
         error
       );
     }
   };
 
+  const handleMuteToggle = () => {
+    const next = !isMuted;
+    onMutedChange(next);
+  };
+
   const handleVolumeSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseInt(e.target.value, 10);
-    if (newVolume === 0) {
-      setIsMuted(true);
-    } else {
-      setIsMuted(false);
-      previousVolumeRef.current = newVolume;
-      if (player?.unMute) player.unMute();
+    onVolumeChange(newVolume);
+    if (newVolume > 0 && isMuted) {
+      onMutedChange(false);
     }
-    if (onVolumeChange) onVolumeChange(newVolume);
+  };
+
+  const handleRateChange = (rate: number) => {
+    player?.setPlaybackRate(rate);
+    setPlaybackRate(rate);
+  };
+
+  const handleCaptionsToggle = () => {
+    const next = !captionsOn;
+    player?.setCaptionsEnabled(next);
+    setCaptionsOn(next);
   };
 
   const VolumeIcon = isMuted || volume === 0 ? VolumeX : volume <= 50 ? Volume1 : Volume2;
+  const rates = player?.getAvailablePlaybackRates() ?? [0.5, 1, 1.5, 2];
 
-  // Usar o estado compartilhado de visibilidade
-  useEffect(() => {
-    setIsVisible(showControls);
-  }, [showControls]);
+  // Twitch ao vivo não tem para onde arrastar, e só o YouTube expõe
+  // velocidade e legendas: o que não existe some da barra.
+  const can = player?.capabilities ?? { seek: true, speed: true, captions: true };
+  // Dailymotion opera pelos próprios botões: mostrar os nossos seria oferecer
+  // controle que não existe. Sobra a navegação da fila e o menu.
+  const nativeControls = Boolean(can.nativeControls);
+  const isLive = Boolean(player) && !can.seek && !nativeControls;
 
   return (
-    <div ref={containerRef} className="video-controls-wrapper">
+    <div className="video-controls-wrapper">
+      {/* O hover fica no container, não no wrapper: o wrapper não recebe
+          eventos, para não bloquear o clique no vídeo. */}
       <div
-        ref={controlsRef}
         className={`video-controls-container ${
-          isVisible ? "visible" : "hidden"
+          showControls ? "visible" : "hidden"
         }`}
+        onMouseEnter={() => onInteractingChange(true)}
+        onMouseLeave={() => onInteractingChange(menuOpen)}
       >
         <div className="video-progress-container">
           <div className="playback-actions">
             <button
+              type="button"
               className="control-button-small queue-nav-button"
               onClick={() => handlePlaylistNavigation("previous")}
-              title="Vídeo anterior"
+              title={strings.controls.previous}
+              aria-label={strings.controls.previous}
               disabled={!canGoToPrevious}
             >
-              <SkipBack size={14} />
+              <SkipBack size={14} aria-hidden="true" />
             </button>
+            {can.seek && (
             <button
-              className="control-button-small play-pause-button"
-              onClick={togglePlayPause}
-              title={isPlaying ? "Pausar" : "Play"}
+              type="button"
+              className="control-button-small seek-button"
+              onClick={() => player?.seekBy(-SEEK_STEP)}
+              title={strings.controls.rewind(SEEK_STEP)}
+              aria-label={strings.controls.rewind(SEEK_STEP)}
             >
-              {isPlaying ? "⏸" : "▶"}
+              <RotateCcw size={14} aria-hidden="true" />
             </button>
+            )}
+            {!nativeControls && (
             <button
+              type="button"
+              className="control-button-small play-pause-button"
+              onClick={() => player?.togglePlay()}
+              title={isPlaying ? strings.controls.pauseHint : strings.controls.playHint}
+              aria-label={isPlaying ? strings.controls.pause : strings.controls.play}
+            >
+              {isPlaying ? (
+                <Pause size={14} aria-hidden="true" />
+              ) : (
+                <Play size={14} aria-hidden="true" />
+              )}
+            </button>
+            )}
+            {can.seek && (
+            <button
+              type="button"
+              className="control-button-small seek-button"
+              onClick={() => player?.seekBy(SEEK_STEP)}
+              title={strings.controls.forward(SEEK_STEP)}
+              aria-label={strings.controls.forward(SEEK_STEP)}
+            >
+              <RotateCw size={14} aria-hidden="true" />
+            </button>
+            )}
+            <button
+              type="button"
               className="control-button-small queue-nav-button"
               onClick={() => handlePlaylistNavigation("next")}
-              title="Próximo vídeo"
+              title={strings.controls.next}
+              aria-label={strings.controls.next}
               disabled={!canGoToNext}
             >
-              <SkipForward size={14} />
+              <SkipForward size={14} aria-hidden="true" />
             </button>
           </div>
-          <span className="video-time">{formatTime(currentTime)}</span>
+
+          {nativeControls ? (
+            <span className="video-native-hint">{strings.controls.nativeControls}</span>
+          ) : isLive ? (
+            <span className="video-live" role="status">
+              {strings.controls.live}
+            </span>
+          ) : (
+            <>
+          <span className="video-time">{formatTime(displayTime)}</span>
+
           <input
-            ref={progressRef}
             type="range"
             min="0"
             max="100"
             step="0.1"
             value={progressPercentage}
-            onChange={handleProgressChange}
-            onMouseDown={handleProgressMouseDown}
-            onMouseUp={handleProgressMouseUp}
-            onTouchStart={handleProgressMouseDown}
-            onTouchEnd={handleProgressTouchEnd}
+            disabled={!hasDuration}
+            onChange={(e) => {
+              if (!hasDuration) return;
+              setSeekPreview((parseFloat(e.target.value) / 100) * duration);
+            }}
+            onMouseUp={() => {
+              if (seekPreview !== null) {
+                player?.seekTo(seekPreview);
+                setCurrentTime(seekPreview);
+              }
+              setSeekPreview(null);
+            }}
+            onTouchEnd={() => {
+              if (seekPreview !== null) {
+                player?.seekTo(seekPreview);
+                setCurrentTime(seekPreview);
+              }
+              setSeekPreview(null);
+            }}
             className="video-progress-slider"
-            title="Arraste para buscar no vídeo"
+            title={hasDuration ? strings.controls.seekHint : strings.controls.loadingHint}
+            aria-label={strings.controls.position}
           />
-          <span className="video-time">{formatTime(effectiveDuration)}</span>
+
+          {/* Duração só aparece quando é real - nada de número inventado. */}
+          <span className="video-time">
+            {hasDuration ? formatTime(duration) : "--:--"}
+          </span>
+            </>
+          )}
+
+          {!nativeControls && (
           <div className="volume-control">
             <button
+              type="button"
               className="control-button-small volume-button"
               onClick={handleMuteToggle}
-              title={isMuted ? "Ativar som" : "Mutar"}
+              title={isMuted ? strings.controls.unmute : strings.controls.mute}
+              aria-label={isMuted ? strings.controls.unmuteAria : strings.controls.muteAria}
             >
-              <VolumeIcon size={14} />
+              <VolumeIcon size={14} aria-hidden="true" />
             </button>
             <input
               type="range"
@@ -389,8 +398,110 @@ export function VideoControls({
               value={isMuted ? 0 : volume}
               onChange={handleVolumeSliderChange}
               className="volume-slider"
-              title="Volume"
+              title={strings.controls.volume}
+              aria-label={strings.controls.volume}
             />
+          </div>
+          )}
+
+          <div className="controls-menu" ref={menuRef}>
+            <button
+              type="button"
+              className="control-button-small"
+              onClick={() => setMenuOpen((open) => !open)}
+              title={strings.controls.more}
+              aria-label={strings.controls.more}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              <MoreHorizontal size={14} aria-hidden="true" />
+            </button>
+
+            {menuOpen && (
+              <div className="controls-menu-panel" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="controls-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenQueue();
+                  }}
+                >
+                  <ListOrdered size={14} aria-hidden="true" />
+                  {strings.controls.queue}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="controls-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onChangeVideo();
+                  }}
+                >
+                  <Play size={14} aria-hidden="true" />
+                  {strings.controls.changeVideo}
+                  <kbd>⌘L</kbd>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="controls-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenInYouTube();
+                  }}
+                >
+                  <ExternalLink size={14} aria-hidden="true" />
+                  {strings.controls.openOnYouTube}
+                </button>
+
+                {(can.captions || can.speed) && (
+                  <div className="controls-menu-separator" role="separator" />
+                )}
+
+                {can.captions && (
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={captionsOn}
+                  className={`controls-menu-item ${captionsOn ? "active" : ""}`}
+                  onClick={handleCaptionsToggle}
+                >
+                  <Subtitles size={14} aria-hidden="true" />
+                  {strings.controls.captions}
+                  <span className="controls-menu-value">
+                    {captionsOn ? strings.controls.captionsOn : strings.controls.captionsOff}
+                  </span>
+                </button>
+                )}
+
+                {can.speed && (
+                <div className="controls-menu-label">
+                  <Gauge size={14} aria-hidden="true" />
+                  {strings.controls.speed}
+                </div>
+                )}
+                {can.speed && (
+                <div className="controls-menu-rates">
+                  {rates.map((rate) => (
+                    <button
+                      type="button"
+                      key={rate}
+                      className={`rate-button ${
+                        Math.abs(rate - playbackRate) < 0.01 ? "active" : ""
+                      }`}
+                      onClick={() => handleRateChange(rate)}
+                      aria-pressed={Math.abs(rate - playbackRate) < 0.01}
+                    >
+                      {rate}×
+                    </button>
+                  ))}
+                </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,18 +1,29 @@
-import { app, BrowserWindow, ipcMain, Tray, nativeImage, shell } from 'electron';
-import { createWindow, createQueueWindow } from './window';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Tray, nativeImage, shell } from 'electron';
+import { createWindow, createQueueWindow, restoreWindow } from './window';
 import { registerShortcuts, unregisterShortcuts } from './shortcuts';
-import { stopServer } from './server';
-import { initQueueStore, getQueue, saveQueue, broadcastQueueUpdate, playVideoNow, addItemsToQueue, hydrateQueueTitles } from './queue-store';
+import { stopServer, isExtensionApiAvailable } from './server';
+import { initQueueStore, getQueue, saveQueue, broadcastQueueUpdate, playVideoNow, addItemsToQueue, hydrateQueueTitles, setNowPlaying } from './queue-store';
 import Store from 'electron-store';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import type { QueueItem, QueueState } from '../types/index';
+import { strings } from './strings';
+import {
+  advanceAfterEnded,
+  moveItemAfterCurrent,
+  removeFromQueue,
+  reorderQueue,
+} from './queue-logic';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const store = new Store<{
   lastVideoId?: string;
+  lastVideoPosition?: { videoId: string; seconds: number };
+  volume?: number;
+  muted?: boolean;
+  onboardingSeen?: boolean;
   windowSize?: { width: number; height: number };
   queue?: QueueState;
 }>();
@@ -24,6 +35,9 @@ let isQuitting = false;
 let lastProcessedEndedEvent:
   | { key: string; timestamp: number }
   | null = null;
+// Guarda a fila apagada pelo "Limpar fila" até a próxima limpeza, para o desfazer.
+let lastClearedQueue: QueueState | null = null;
+let currentVideoTitle = '';
 
 initQueueStore(store, () => ({ main: mainWindow, queue: queueWindow }));
 
@@ -39,6 +53,21 @@ if (process.defaultApp) {
 function handleProtocolUrl(url: string) {
   try {
     const parsed = new URL(url);
+
+    // ytview://queue — a extensão usa para abrir a janela da fila.
+    if (parsed.pathname === '/queue' || parsed.host === 'queue') {
+      const tryOpen = () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          restoreWindow(mainWindow);
+          void openQueueWindow();
+        } else {
+          setTimeout(tryOpen, 500);
+        }
+      };
+      tryOpen();
+      return;
+    }
+
     if (parsed.pathname === '/play' || parsed.host === 'play') {
       const videoId = parsed.searchParams.get('v');
       if (videoId) {
@@ -58,99 +87,195 @@ function handleProtocolUrl(url: string) {
   }
 }
 
-// macOS: handle protocol URL when app is already running
-app.on('open-url', (event, url) => {
-  event.preventDefault();
-  handleProtocolUrl(url);
-});
-
-// Handle protocol URL from launch args (Windows/Linux)
-const protocolArg = process.argv.find(arg => arg.startsWith('ytview://'));
-if (protocolArg) {
-  app.whenReady().then(() => handleProtocolUrl(protocolArg));
+async function openQueueWindow(): Promise<void> {
+  if (queueWindow && !queueWindow.isDestroyed()) {
+    queueWindow.show();
+    queueWindow.focus();
+    return;
+  }
+  queueWindow = await createQueueWindow();
+  queueWindow.on('closed', () => {
+    queueWindow = null;
+  });
 }
 
-app.whenReady().then(async () => {
-  mainWindow = await createWindow();
-  if (mainWindow) {
-    registerShortcuts(mainWindow);
+function quitApp() {
+  isQuitting = true;
+  app.quit();
+}
 
-  }
+function createTray() {
+  if (process.platform !== 'darwin') return;
 
-  // Criar ícone na barra de menu (Tray) - macOS
-  if (process.platform === 'darwin') {
+  try {
+    // Template icon para macOS (adapta automaticamente ao tema claro/escuro)
+    const iconPath = path.join(__dirname, '../../assets/tray-iconTemplate.png');
+    let trayImage;
+
     try {
-      // Template icon para macOS (adapta automaticamente ao tema claro/escuro)
-      const iconPath = path.join(__dirname, '../../assets/tray-iconTemplate.png');
-      let trayImage;
-
+      trayImage = nativeImage.createFromPath(iconPath);
+      trayImage.setTemplateImage(true);
+    } catch (e) {
+      // Fallback para ícone regular
+      const fallbackPath = path.join(__dirname, '../../assets/tray-icon.png');
       try {
-        trayImage = nativeImage.createFromPath(iconPath);
-        trayImage.setTemplateImage(true);
-      } catch (e) {
-        // Fallback para ícone regular
-        const fallbackPath = path.join(__dirname, '../../assets/tray-icon.png');
-        try {
-          trayImage = nativeImage.createFromPath(fallbackPath);
-        } catch (e2) {
-          trayImage = nativeImage.createEmpty();
-        }
+        trayImage = nativeImage.createFromPath(fallbackPath);
+      } catch (e2) {
+        trayImage = nativeImage.createEmpty();
       }
-
-      tray = new Tray(trayImage || nativeImage.createEmpty());
-      tray.setToolTip('YTView - YouTube PiP');
-
-      // Menu do Tray
-      tray.setContextMenu(null); // Sem menu por enquanto
-
-      // Clicar no Tray para mostrar/ocultar janela
-      tray.on('click', () => {
-        if (mainWindow) {
-          if (mainWindow.isVisible()) {
-            mainWindow.hide();
-          } else {
-            mainWindow.show();
-            // Focar quando usuário clica no tray (ação do usuário)
-            mainWindow.focus();
-          }
-        }
-      });
-    } catch (error) {
-      console.error('Erro ao criar Tray:', error);
     }
-  }
 
-  // Cmd+W: Fechar janela (minimizar para dock)
-  if (mainWindow) {
-    mainWindow.on("close", (event: any) => {
-      if (!isQuitting) {
-        event.preventDefault();
-        mainWindow?.hide();
+    tray = new Tray(trayImage || nativeImage.createEmpty());
+    tray.setToolTip(strings.app.trayTooltip);
+
+    // Menu do Tray: o caminho de volta visível quando a janela está escondida.
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: strings.tray.show,
+        accelerator: 'CommandOrControl+Shift+Y',
+        click: () => restoreWindow(mainWindow),
+      },
+      {
+        label: strings.tray.hide,
+        click: () => mainWindow?.hide(),
+      },
+      { type: 'separator' },
+      {
+        label: strings.tray.queue,
+        click: () => { void openQueueWindow(); },
+      },
+      { type: 'separator' },
+      {
+        label: strings.tray.quit,
+        accelerator: 'Command+Q',
+        click: quitApp,
+      },
+    ]);
+
+    // Botão direito abre o menu; botão esquerdo continua alternando a janela.
+    tray.on('right-click', () => tray?.popUpContextMenu(contextMenu));
+
+    tray.on('click', () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+
+      // isVisible() sozinho não basta: a janela pode estar visível mas
+      // transparente, ou minimizada pelo sistema.
+      const isReallyVisible =
+        mainWindow.isVisible() &&
+        !mainWindow.isMinimized() &&
+        mainWindow.getOpacity() >= 1;
+
+      if (isReallyVisible) {
+        mainWindow.hide();
+      } else {
+        restoreWindow(mainWindow);
       }
     });
+  } catch (error) {
+    console.error('Erro ao criar Tray:', error);
   }
+}
 
-  app.on('activate', async () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      mainWindow = await createWindow();
-      if (mainWindow) {
-        registerShortcuts(mainWindow);
-
-      }
-      if (mainWindow) {
-        mainWindow.on("close", (event: any) => {
-          if (!isQuitting) {
-            event.preventDefault();
-            mainWindow?.hide();
-          }
-        });
-      }
-    } else if (mainWindow) {
-      mainWindow.show();
-      // Não focar automaticamente - deixar usuário clicar para focar
+// Fechar a janela apenas esconde; quem encerra é o menu do tray ou o Cmd+Q.
+function attachHideOnClose(win: InstanceType<typeof BrowserWindow>) {
+  win.on('close', (event: any) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      win.hide();
     }
   });
-});
+
+  // Esconder tem que calar o som. Sem isto o vídeo seguia tocando sem janela
+  // nenhuma na tela - e não havia como pausar a não ser trazendo tudo de volta.
+  // Vale para o ✕, o Cmd+W, o Ocultar do menu e o Cmd+H do sistema.
+  win.on('hide', () => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('pause-playback');
+    }
+  });
+}
+
+function reportStartupFailure(error: unknown) {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error('[Main] Falha ao iniciar:', error);
+
+  dialog.showMessageBoxSync({
+    type: 'error',
+    title: strings.dialogs.startupFailedTitle,
+    message: strings.dialogs.startupFailedMessage,
+    detail: strings.dialogs.startupFailedDetail(detail),
+    buttons: [strings.dialogs.close],
+  });
+
+  quitApp();
+}
+
+function warnExtensionApiUnavailable() {
+  void dialog.showMessageBox({
+    type: 'warning',
+    title: strings.dialogs.portInUseTitle,
+    message: strings.dialogs.portInUseMessage,
+    detail: strings.dialogs.portInUseDetail,
+    buttons: [strings.dialogs.ok],
+  });
+}
+
+async function bootstrap() {
+  mainWindow = await createWindow();
+  registerShortcuts(mainWindow);
+  attachHideOnClose(mainWindow);
+
+  createTray();
+
+  if (!isExtensionApiAvailable()) {
+    warnExtensionApiUnavailable();
+  }
+}
+
+// Uma instância só: a segunda tentaria subir na mesma porta, falharia, e
+// ficaria rodando sem janela nenhuma.
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_event: any, argv: string[]) => {
+    restoreWindow(mainWindow);
+
+    const protocolArg = argv.find((arg) => arg.startsWith('ytview://'));
+    if (protocolArg) {
+      handleProtocolUrl(protocolArg);
+    }
+  });
+
+  // macOS: handle protocol URL when app is already running
+  app.on('open-url', (event: any, url: string) => {
+    event.preventDefault();
+    handleProtocolUrl(url);
+  });
+
+  // Handle protocol URL from launch args (Windows/Linux)
+  const protocolArg = process.argv.find(arg => arg.startsWith('ytview://'));
+  if (protocolArg) {
+    app.whenReady().then(() => handleProtocolUrl(protocolArg));
+  }
+
+  app.whenReady()
+    .then(async () => {
+      await bootstrap();
+
+      app.on('activate', async () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+          mainWindow = await createWindow();
+          registerShortcuts(mainWindow);
+          attachHideOnClose(mainWindow);
+        } else {
+          restoreWindow(mainWindow);
+        }
+      });
+    })
+    .catch(reportStartupFailure);
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -158,6 +283,12 @@ app.on('window-all-closed', () => {
     stopServer();
     app.quit();
   }
+});
+
+// Precisa vir antes do 'close' da janela, senão o Cmd+Q é engolido pelo
+// preventDefault que transforma fechar em esconder.
+app.on('before-quit', () => {
+  isQuitting = true;
 });
 
 app.on('will-quit', () => {
@@ -175,12 +306,62 @@ ipcMain.handle('save-video', (_: any, videoId: string) => {
   store.set('lastVideoId', videoId);
 });
 
+ipcMain.handle('save-video-position', (_: any, videoId: string, seconds: number) => {
+  if (!videoId || typeof seconds !== 'number' || !isFinite(seconds) || seconds < 0) return;
+  store.set('lastVideoPosition', { videoId, seconds });
+});
+
+ipcMain.handle('get-video-position', (_: any, videoId: string) => {
+  const saved = store.get('lastVideoPosition');
+  if (!saved || saved.videoId !== videoId) return 0;
+  return saved.seconds;
+});
+
 ipcMain.handle('get-stored-volume', (_: any) => {
   return store.get('volume') ?? 100;
 });
 
 ipcMain.handle('save-volume', (_: any, volume: number) => {
-  store.set('volume', volume);
+  // Volume 0 não é guardado: mudo é um estado à parte (ver save-muted).
+  if (typeof volume === 'number' && volume > 0) {
+    store.set('volume', volume);
+  }
+});
+
+ipcMain.handle('get-stored-muted', (_: any) => {
+  return store.get('muted') ?? false;
+});
+
+ipcMain.handle('save-muted', (_: any, muted: boolean) => {
+  store.set('muted', Boolean(muted));
+});
+
+ipcMain.handle('has-seen-onboarding', (_: any) => {
+  return store.get('onboardingSeen') ?? false;
+});
+
+ipcMain.handle('mark-onboarding-seen', (_: any) => {
+  store.set('onboardingSeen', true);
+});
+
+// O título do vídeo vira o tooltip do ícone na barra de menu: dá para saber
+// o que está tocando mesmo com a janela escondida.
+ipcMain.handle('set-window-title', (_: any, title: string) => {
+  currentVideoTitle = typeof title === 'string' ? title : '';
+  tray?.setToolTip(
+    currentVideoTitle
+      ? strings.app.trayTooltipPlaying(currentVideoTitle)
+      : strings.app.trayTooltip
+  );
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setTitle(currentVideoTitle || strings.app.name);
+  }
+});
+
+// O vídeo passou a tocar: alinhar a fila com ele.
+ipcMain.handle('set-now-playing', async (_: any, videoId: string) => {
+  if (!videoId) return getQueue();
+  return setNowPlaying(videoId);
 });
 
 ipcMain.handle('get-window-size', (_: any) => {
@@ -239,35 +420,30 @@ ipcMain.handle('toggle-fullscreen', () => {
   return false;
 });
 
-// Handler para minimizar a janela (pausar vídeo e tornar transparente)
+// Minimizar: esconder de verdade. Baixar a opacidade deixava a janela no
+// caminho do mouse, invisível e sempre no topo.
 ipcMain.handle('minimize-window', () => {
-  if (mainWindow) {
-    // Tornar janela transparente
-    mainWindow.setOpacity(0.01); // Quase transparente, mas ainda visível para o sistema
-    mainWindow.setVisibleOnAllWorkspaces(false);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setOpacity(1);
+    mainWindow.hide();
   }
 });
 
-// Handler para fechar a aplicação completamente
+// Fechar esconde a janela, igual ao Cmd+W. Sair é o Cmd+Q ou o menu do tray.
 ipcMain.handle('close-window', () => {
-  isQuitting = true;
-  if (mainWindow) {
-    mainWindow.destroy();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.hide();
   }
-  app.quit();
+});
+
+ipcMain.handle('quit-app', () => {
+  quitApp();
 });
 
 // ===== Queue/Playlist IPC Handlers =====
 
 ipcMain.handle('open-queue-window', async () => {
-  if (queueWindow && !queueWindow.isDestroyed()) {
-    queueWindow.focus();
-    return;
-  }
-  queueWindow = await createQueueWindow();
-  queueWindow.on('closed', () => {
-    queueWindow = null;
-  });
+  await openQueueWindow();
 });
 
 ipcMain.handle('get-queue', async () => {
@@ -287,29 +463,47 @@ ipcMain.handle('add-to-queue', async (_: any, items: Array<{ videoId: string; ur
 });
 
 ipcMain.handle('remove-from-queue', (_: any, id: string) => {
-  const queue = getQueue();
-  const removedIndex = queue.items.findIndex(item => item.id === id);
-  if (removedIndex === -1) return;
+  const { state, playVideoId } = removeFromQueue(getQueue(), id);
+  saveQueue(state);
 
-  queue.items = queue.items.filter(item => item.id !== id);
-
-  // Adjust currentIndex
-  if (queue.currentIndex >= 0) {
-    if (removedIndex < queue.currentIndex) {
-      queue.currentIndex--;
-    } else if (removedIndex === queue.currentIndex) {
-      queue.currentIndex = -1;
-    }
+  if (playVideoId && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('play-video', playVideoId);
   }
 
-  saveQueue(queue);
-  broadcastQueueUpdate(queue);
+  broadcastQueueUpdate(state);
 });
 
 ipcMain.handle('clear-queue', () => {
+  const current = getQueue();
+  lastClearedQueue = current.items.length > 0 ? current : null;
+
   const queue: QueueState = { items: [], currentIndex: -1 };
   saveQueue(queue);
   broadcastQueueUpdate(queue);
+
+  return lastClearedQueue !== null;
+});
+
+ipcMain.handle('undo-clear-queue', () => {
+  if (!lastClearedQueue) return null;
+
+  const restored = lastClearedQueue;
+  lastClearedQueue = null;
+  saveQueue(restored);
+  broadcastQueueUpdate(restored);
+  return restored;
+});
+
+ipcMain.handle('reorder-queue', (_: any, fromIndex: number, toIndex: number) => {
+  const state = reorderQueue(getQueue(), fromIndex, toIndex);
+  saveQueue(state);
+  broadcastQueueUpdate(state);
+});
+
+ipcMain.handle('play-next-in-queue', (_: any, id: string) => {
+  const state = moveItemAfterCurrent(getQueue(), id);
+  saveQueue(state);
+  broadcastQueueUpdate(state);
 });
 
 ipcMain.handle('play-from-queue', (_: any, index: number) => {
@@ -328,26 +522,15 @@ ipcMain.handle('play-from-queue', (_: any, index: number) => {
 });
 
 ipcMain.handle('video-ended', (_: any, endedVideoId?: string) => {
-  const queue = getQueue();
-  if (queue.items.length === 0) return;
+  const { state, playVideoId, endedIndex } = advanceAfterEnded(
+    getQueue(),
+    endedVideoId
+  );
+  if (endedIndex === -1) return;
 
-  let endedIndex = queue.currentIndex;
-
-  // If we received an explicit videoId, prefer matching by id to handle desync.
-  if (endedVideoId) {
-    if (endedIndex >= 0 && queue.items[endedIndex]?.videoId === endedVideoId) {
-      // current index already points to the ended video
-    } else {
-      const matchedIndex = queue.items.findIndex(item => item.videoId === endedVideoId);
-      if (matchedIndex === -1) return;
-      endedIndex = matchedIndex;
-    }
-  }
-
-  if (endedIndex < 0 || endedIndex >= queue.items.length) return;
-
-  // Ignore duplicated ended events for the same queue entry in a short time window.
-  const dedupeKey = `${endedIndex}:${queue.items[endedIndex].videoId}`;
+  // O fim pode ser reportado mais de uma vez (evento do player e fallback):
+  // duas trocas seguidas pulariam um vídeo.
+  const dedupeKey = `${endedIndex}:${endedVideoId ?? ''}`;
   const now = Date.now();
   if (
     lastProcessedEndedEvent &&
@@ -358,22 +541,11 @@ ipcMain.handle('video-ended', (_: any, endedVideoId?: string) => {
   }
   lastProcessedEndedEvent = { key: dedupeKey, timestamp: now };
 
-  const nextIndex = endedIndex + 1;
+  saveQueue(state);
 
-  if (nextIndex < queue.items.length) {
-    queue.currentIndex = nextIndex;
-    saveQueue(queue);
-
-    const videoId = queue.items[nextIndex].videoId;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('play-video', videoId);
-    }
-
-    broadcastQueueUpdate(queue);
-  } else {
-    // End of queue
-    queue.currentIndex = -1;
-    saveQueue(queue);
-    broadcastQueueUpdate(queue);
+  if (playVideoId && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('play-video', playVideoId);
   }
+
+  broadcastQueueUpdate(state);
 });

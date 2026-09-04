@@ -9,7 +9,8 @@
     "dev:extension": "turbo dev --filter=@ytview/chrome-extension",
     "build:desktop": "turbo build --filter=@ytview/desktop",
     "build:extension": "turbo build --filter=@ytview/chrome-extension",
-    "clean": "turbo clean"
+    "clean": "turbo clean",
+    "test": "turbo test"
   },
   "devDependencies": {
     "turbo": "^2.3.0"
