@@ -322,11 +322,12 @@ function positionOverlay(): void {
   const rect = thumbRect(currentRenderer);
   const height = overlay.offsetHeight || 34;
 
-  // Canto inferior esquerdo da imagem: o YouTube usa o direito para a duração.
+  // Canto superior esquerdo da imagem. O YouTube ocupa o canto inferior
+  // direito com a duração e o superior direito com o menu do vídeo.
   overlay.style.left = `${rect.left + 8}px`;
-  overlay.style.top = `${Math.min(
-    rect.bottom - height - 8,
-    window.innerHeight - height - 4
+  overlay.style.top = `${Math.max(
+    4,
+    Math.min(rect.top + 8, window.innerHeight - height - 4)
   )}px`;
 }
 
