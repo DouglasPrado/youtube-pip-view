@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/ytview-icon.png" width="180" alt="YTView logo" />
+  [<img src="./[assets/ytview-icon.png](https://github.com/DouglasPrado/youtube-pip-view/blob/main/apps/chrome-extension/public/icons/icon128.png)" width="180" alt="YTView logo" />](https://github.com/DouglasPrado/youtube-pip-view/blob/main/apps/chrome-extension/public/icons/icon128.png)
 </p>
 
 <h1 align="center">YTView</h1>
