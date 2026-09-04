@@ -145,8 +145,9 @@ const THUMB_SELECTOR = [
 let overlay: HTMLDivElement | null = null;
 let currentVideoId: string | null = null;
 let currentRenderer: Element | null = null;
-let currentThumb: Element | null = null;
 let hideTimer: number | null = null;
+let followFrame = 0;
+let pointer = { x: -1, y: -1 };
 let resetTimer: number | null = null;
 
 function icon(name: "play" | "plus" | "check"): string {
@@ -182,11 +183,10 @@ function getOverlay(): HTMLDivElement {
   queue.addEventListener("click", (e) => handleAction(e, "queue"));
 
   box.append(play, queue);
-  box.addEventListener("mouseenter", cancelHide);
-  box.addEventListener("mouseleave", scheduleHide);
-  // Chegando por teclado, o par de botões não pode sumir.
+  // Quem decide esconder é o loop de acompanhamento (followCard), que olha
+  // onde o ponteiro está de fato — mouseleave dispara sozinho quando o
+  // YouTube re-renderiza o cartão.
   box.addEventListener("focusin", cancelHide);
-  box.addEventListener("focusout", scheduleHide);
 
   document.body.appendChild(box);
   overlay = box;
@@ -277,34 +277,91 @@ function scheduleHide(): void {
     // Com o foco dentro dos botões, esconder tiraria o alvo do teclado.
     if (overlay?.contains(document.activeElement)) return;
     hideOverlay();
-  }, 320);
+  }, 260);
 }
 
 function hideOverlay(): void {
   overlay?.classList.remove("ytview-visible");
   currentVideoId = null;
   currentRenderer = null;
-  currentThumb = null;
+  cancelAnimationFrame(followFrame);
+  followFrame = 0;
+}
+
+/** A área da miniatura dentro do cartão, recalculada a cada quadro. */
+function thumbRect(renderer: Element): DOMRect {
+  // O YouTube troca a miniatura por um player de pré-visualização quando o
+  // mouse para em cima. Guardar a referência do elemento fazia o overlay
+  // seguir um nó que já saiu do DOM — e sumir da tela.
+  const thumb = renderer.querySelector(THUMB_SELECTOR);
+  const rect = (thumb ?? renderer).getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0
+    ? rect
+    : renderer.getBoundingClientRect();
+}
+
+function pointerIsOver(rect: DOMRect): boolean {
+  if (pointer.x < 0) return true; // sem posição conhecida, não esconder
+  return (
+    pointer.x >= rect.left &&
+    pointer.x <= rect.right &&
+    pointer.y >= rect.top &&
+    pointer.y <= rect.bottom
+  );
 }
 
 function positionOverlay(): void {
   if (!currentRenderer || !overlay) return;
 
-  const anchor = currentThumb ?? currentRenderer;
-  const rect = anchor.getBoundingClientRect();
-
-  if (rect.bottom < 0 || rect.top > window.innerHeight) {
+  const cardRect = currentRenderer.getBoundingClientRect();
+  if (cardRect.bottom < 0 || cardRect.top > window.innerHeight) {
     hideOverlay();
     return;
   }
 
-  // Canto inferior esquerdo da imagem: o YouTube usa o direito para a duração.
+  const rect = thumbRect(currentRenderer);
   const height = overlay.offsetHeight || 34;
+
+  // Canto inferior esquerdo da imagem: o YouTube usa o direito para a duração.
   overlay.style.left = `${rect.left + 8}px`;
   overlay.style.top = `${Math.min(
     rect.bottom - height - 8,
     window.innerHeight - height - 4
   )}px`;
+}
+
+/**
+ * Acompanha o cartão enquanto o mouse estiver nele.
+ *
+ * O layout do YouTube se mexe sozinho no hover (pré-visualização, sombras,
+ * expansão do título), então posicionar só uma vez deixava os botões para
+ * trás. Sair do cartão e do overlay é o que os esconde — não um mouseleave,
+ * que o próprio re-render dispara à toa.
+ */
+function followCard(): void {
+  cancelAnimationFrame(followFrame);
+  followFrame = requestAnimationFrame(function passo() {
+    if (!currentRenderer || !overlay) return;
+
+    if (!currentRenderer.isConnected) {
+      hideOverlay();
+      return;
+    }
+
+    positionOverlay();
+
+    const noCartao = pointerIsOver(currentRenderer.getBoundingClientRect());
+    const noOverlay = pointerIsOver(overlay.getBoundingClientRect());
+    const comFoco = overlay.contains(document.activeElement);
+
+    if (!noCartao && !noOverlay && !comFoco) {
+      scheduleHide();
+    } else {
+      cancelHide();
+    }
+
+    followFrame = requestAnimationFrame(passo);
+  });
 }
 
 function showOverlay(renderer: Element, videoId: string): void {
@@ -314,7 +371,6 @@ function showOverlay(renderer: Element, videoId: string): void {
   const trocouDeVideo = currentVideoId !== videoId;
   currentVideoId = videoId;
   currentRenderer = renderer;
-  currentThumb = renderer.querySelector(THUMB_SELECTOR);
 
   // Trocar de card zera qualquer ✓ ou ✗ que ainda estivesse na tela.
   if (trocouDeVideo) resetButtons();
@@ -322,6 +378,7 @@ function showOverlay(renderer: Element, videoId: string): void {
   box.classList.add("ytview-visible");
   updateOverlayState();
   positionOverlay();
+  followCard();
 }
 
 /** O vídeo de um cartão do YouTube, onde o seletor de elemento é estável. */
@@ -340,7 +397,7 @@ function videoIdFrom(renderer: Element): string | null {
  *
  * Sobe do link até o primeiro ancestral que contenha uma imagem e tenha
  * tamanho de cartão. É o que permite ancorar os botões sobre a miniatura sem
- * depender de nomes de classe — que no Vimeo e no Twitch são gerados.
+ * depender de nomes de classe — que no Vimeo e no Twitch são gerados no build.
  */
 function cardFor(link: HTMLElement): Element {
   let element: HTMLElement | null = link;
@@ -360,6 +417,14 @@ function cardFor(link: HTMLElement): Element {
 }
 
 function setupHoverDetection(): void {
+  document.addEventListener(
+    "mousemove",
+    (event) => {
+      pointer = { x: event.clientX, y: event.clientY };
+    },
+    { passive: true }
+  );
+
   document.addEventListener("mouseover", (event) => {
     const target = event.target as HTMLElement;
 
@@ -401,15 +466,7 @@ function setupHoverDetection(): void {
     if (link && ref) showOverlay(cardFor(link), mediaKey(ref));
   });
 
-  // Acompanhar a rolagem em vez de sumir: esconder obrigava a tirar o mouse
-  // do card e voltar.
-  let frame = 0;
-  const reposition = () => {
-    cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(positionOverlay);
-  };
-  window.addEventListener("scroll", reposition, { passive: true });
-  window.addEventListener("resize", reposition, { passive: true });
+  // Rolagem e redimensionamento já são acompanhados pelo followCard.
 }
 
 // ===== Playlists =====
