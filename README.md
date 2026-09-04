@@ -1,4 +1,6 @@
-# YouTube Picture-in-Picture
+# YTView
+
+**A native-feeling YouTube floating player for macOS.**
 
 YTView is a macOS app that lets you watch YouTube videos in a floating window that stays always on top. Perfect for watching videos while working or using other apps — **completely ad-free**.
 
